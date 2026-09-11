@@ -80,7 +80,7 @@ function App() {
 
   // ---------- หน้าหลังล็อกอินสำเร็จ ----------
   if (session) {
-    return <CheckinPage fullName={session.fullName} role={session.role} onLogout={handleLogout} />
+    return <CheckinPage initial={session.initial} role={session.role} onLogout={handleLogout} />
   }
 
   // ---------- หน้า Login ----------
@@ -91,8 +91,9 @@ function App() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontFamily: 'sans-serif',
+        fontFamily: "'TH Sarabun PSK', 'Sarabun', sans-serif",
         background: '#f5f6f8',
+        colorScheme: 'light',
       }}
     >
       <form
@@ -107,14 +108,15 @@ function App() {
           textAlign: 'center',
         }}
       >
-        <h2>VTBS PBB Check-in</h2>
+        <h2 style={{ color: '#000' }}>VTBS PBB CONTROL CENTER</h2>
         <p style={{ color: '#666', fontSize: 14 }}>กรุณากรอก Initial และรหัสผ่าน</p>
 
         <input
           type="text"
-          placeholder="Initial เช่น SK"
+          placeholder="Initial เช่น NI"
           value={initial}
           maxLength={4}
+          autoComplete="off"
           onChange={(e) => setInitial(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
           style={inputStyle}
         />
@@ -142,7 +144,7 @@ function App() {
             cursor: loading ? 'not-allowed' : 'pointer',
           }}
         >
-          {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
+          {loading ? 'กำลังตรวจสอบ...' : 'Login'}
         </button>
 
         {error && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{error}</div>}
@@ -160,6 +162,9 @@ const inputStyle: CSSProperties = {
   borderRadius: 8,
   margin: '8px 0',
   boxSizing: 'border-box',
+  background: '#fff',
+  color: '#000',
+  colorScheme: 'light',
 }
 
 export default App
