@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import './App.css'
+import CheckinPage from './CheckinPage'
 
 // TODO: เปลี่ยนเป็น URL ของ Cloudflare Worker "login" ที่ deploy ไว้จริง
-// (ดูได้จากหน้า Worker ใน Cloudflare Dashboard รูปแบบ https://login.<your-subdomain>.workers.dev)
-const WORKER_LOGIN_URL = 'https://login.or-niramon.workers.dev/'
+const WORKER_LOGIN_URL = 'https://login.or-niramon.workers.dev'
 
 type Session = {
   initial: string
@@ -78,17 +78,9 @@ function App() {
     setPassword('')
   }
 
-  // ---------- หน้าหลังล็อกอินสำเร็จ (ยังเป็นแค่หน้าว่างๆ ไว้ต่อยอดทีหลัง) ----------
+  // ---------- หน้าหลังล็อกอินสำเร็จ ----------
   if (session) {
-    return (
-      <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
-        <h2>VTBS PBB Control</h2>
-        <p>
-          เข้าสู่ระบบในนาม <b>{session.fullName}</b> ({session.role})
-        </p>
-        <button onClick={handleLogout}>ออกจากระบบ</button>
-      </div>
-    )
+    return <CheckinPage fullName={session.fullName} role={session.role} onLogout={handleLogout} />
   }
 
   // ---------- หน้า Login ----------
