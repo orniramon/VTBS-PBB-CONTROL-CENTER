@@ -238,9 +238,12 @@ function CheckinPage({ initial: myInitial, role, onLogout }: Props) {
           hour12: false,
         })
         setSuccessInfo({ serviceType: snapshotServiceType, flightNo: snapshotFlightNo, stand: snapshotStand, time: timeStr })
+        setServiceType('')
         setFlightNo('')
         setEibt('')
         setEobt('')
+        setAircraftType('')
+        setMaxL(1)
         setInitial1('')
         setInitial2('')
         setInitial3('')
@@ -326,7 +329,7 @@ function CheckinPage({ initial: myInitial, role, onLogout }: Props) {
             disabled={gpsStatus === 'loading'}
             style={{ ...buttonStyle, background: '#e8f0fe', color: '#1a73e8', marginTop: 6 }}
           >
-            🔄 ลองหาตำแหน่งใหม่
+            Update Location
           </button>
 
           <form onSubmit={handleSubmit}>
@@ -500,12 +503,16 @@ const inputStyle = {
   color: '#000',
   colorScheme: 'light' as const,
 }
-// ช่องเวลาแยกออกมา ไม่ยืดเต็มความกว้าง (ต้นเหตุที่ล้นขอบบนมือถือบางรุ่น)
+// ช่องเวลาแยกออกมา ไม่ยืดเต็มความกว้าง (ต้นเหตุที่ล้นขอบบนมือถือบางรุ่น) และชิดซ้ายเสมอ
 const timeInputStyle = {
   ...inputStyle,
   width: 'auto',
   maxWidth: 180,
   minWidth: 140,
+  display: 'block' as const,
+  marginLeft: 0,
+  marginRight: 'auto',
+  textAlign: 'left' as const,
 }
 const buttonStyle = {
   width: '100%',
