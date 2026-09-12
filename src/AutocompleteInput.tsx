@@ -22,7 +22,7 @@ function AutocompleteInput({ value, onChange, options, placeholder, displayName 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const filtered = options.filter((o) => o.code.toUpperCase().includes(value.toUpperCase()))
+  const filtered = options.filter((o) => o.code.toUpperCase().startsWith(value.toUpperCase()))
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
