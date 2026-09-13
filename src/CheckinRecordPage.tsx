@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import AutocompleteInput from './AutocompleteInput'
 import { getServiceTypeColor } from './serviceTypeColors'
+import FitText from './FitText'
 
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
 const HOURS_WINDOW = 8
@@ -317,10 +318,6 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                               borderRight: '1px solid #c3c9d1',
                               cursor: 'grab',
                               userSelect: 'none',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              textAlign: 'center',
                               color: '#000',
                             }}
                           >
@@ -330,7 +327,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                                 <div style={{ fontSize: '0.85em', borderTop: '1px solid #c3c9d1', marginTop: 2, paddingTop: 2 }}>เวลา</div>
                               </div>
                             ) : (
-                              c.label
+                              <FitText text={c.label} />
                             )}
                           </div>
                         ))}
@@ -360,10 +357,6 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                                 className="rec-cell"
                                 style={{
                                   borderRight: '1px solid #eee',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  textAlign: 'center',
                                   color: '#000',
                                 }}
                               >
@@ -399,17 +392,17 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                                     )}
                                   </div>
                                 ) : c.key === 'stand' ? (
-                                  r.stand
+                                  <FitText text={r.stand} />
                                 ) : c.key === 'flightNo' ? (
-                                  r.flightNo
+                                  <FitText text={r.flightNo} />
                                 ) : c.key === 'aircraftType' ? (
-                                  r.aircraftType
+                                  <FitText text={r.aircraftType} />
                                 ) : c.key === 'initials' ? (
-                                  r.initials
+                                  <FitText text={r.initials} />
                                 ) : c.key === 'time' ? (
-                                  timeOf(r.createdAt)
+                                  <FitText text={timeOf(r.createdAt)} />
                                 ) : c.key === 'note' ? (
-                                  r.note || ''
+                                  <FitText text={r.note || ''} />
                                 ) : null}
                               </div>
                             ))}
