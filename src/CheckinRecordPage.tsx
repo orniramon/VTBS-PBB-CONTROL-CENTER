@@ -6,7 +6,7 @@ import { getServiceTypeColor } from './serviceTypeColors'
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
 const HOURS_WINDOW = 8
 const MAX_ROWS_PER_SECTION = 10
-const PRESS_HOLD_MS = 1500 // เวลากดค้างก่อนขึ้นป๊อบอัพลบ (เพิ่มจากเดิมเพื่อกันกดโดนโดยไม่ตั้งใจ)
+const PRESS_HOLD_MS = 400 // เวลากดค้างก่อนขึ้นป๊อบอัพลบ (เร็วกว่า iOS text-selection gesture)
 
 type CheckinRecord = {
   id: string
@@ -200,7 +200,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
             const isCollapsed = collapsed[type]
 
             return (
-              <div key={type}>
+              <div key={type} style={{ minWidth: 0 }}>
                 {/* ---------- หัวข้อ (ลากสลับตำแหน่งได้) ---------- */}
                 <div
                   draggable
@@ -343,9 +343,12 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                               gridTemplateColumns: gridTemplate,
                               fontSize: 13,
                               borderBottom: '1px solid #eee',
-                              background: pressingId === r.id ? '#fff3cd' : idx % 2 === 0 ? '#ffffff' : '#f4f6f9',
+                              background: pressingId === r.id ? '#fff3cd' : idx % 2 === 0 ? '#ffffff' : '#e3e7f0',
                               color: '#000',
                               transition: 'background 0.1s',
+                              userSelect: 'none',
+                              WebkitUserSelect: 'none',
+                              WebkitTouchCallout: 'none',
                             }}
                           >
                             {cols.map((c) => (
