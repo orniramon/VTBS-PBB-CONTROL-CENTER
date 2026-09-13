@@ -52,17 +52,30 @@ function FitText({ text, minScale = 1 }: Props) {
         overflow: 'hidden',
         whiteSpace: 'nowrap',
         textAlign: 'center',
-        textOverflow: needsTruncate ? 'ellipsis' : 'clip',
         cursor: needsTruncate ? 'pointer' : 'default',
-        textDecoration: needsTruncate ? 'underline dotted' : 'none',
+        position: 'relative',
       }}
     >
-      <span
-        ref={textRef}
-        style={{ display: 'inline-block', transform: `scale(${scale})`, transformOrigin: 'center' }}
-      >
-        {text}
-      </span>
+      {needsTruncate ? (
+        // โหมดตัดข้อความ: ใช้ text-overflow ล้วนๆ ห้ามผสม transform เด็ดขาด
+        // (ผสมกันแล้วเบราว์เซอร์คำนวณจุดตัดผิด ไม่ขึ้น "..." ให้)
+        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'underline dotted' }}>
+          {text}
+        </span>
+      ) : (
+        <span
+          ref={textRef}
+          style={{ display: 'inline-block', transform: `scale(${scale})`, transformOrigin: 'center' }}
+        >
+          {text}
+        </span>
+      )}
+      {/* ช่องวัดขนาดที่ซ่อนไว้ (ใช้เทียบว่าข้อความยาวแค่ไหนตอนขนาดเต็ม 100%) */}
+      {needsTruncate && (
+        <span ref={textRef} style={{ position: 'absolute', top: 0, left: 0, visibility: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+          {text}
+        </span>
+      )}
     </div>
   )
 }
