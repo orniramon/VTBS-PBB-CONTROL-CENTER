@@ -391,7 +391,6 @@ function CheckinRecordPage({ role, myInitial }: Props) {
       {addModalType && (
         <ManualAddModal
           serviceType={addModalType}
-          myInitial={myInitial}
           onClose={() => setAddModalType(null)}
           onDone={() => {
             setAddModalType(null)
@@ -430,12 +429,10 @@ function CheckinRecordPage({ role, myInitial }: Props) {
 // =====================================================================
 function ManualAddModal({
   serviceType,
-  myInitial,
   onClose,
   onDone,
 }: {
   serviceType: string
-  myInitial: string
   onClose: () => void
   onDone: () => void
 }) {
