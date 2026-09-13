@@ -123,7 +123,11 @@ function App() {
           textAlign: 'center',
         }}
       >
-        <h2 style={{ color: '#000', fontSize: 22, lineHeight: 1.3, margin: '0 0 8px' }}>VTBS AEROBRIDGE CONTROL CENTER</h2>
+        <h2 style={{ color: '#000', fontSize: 22, lineHeight: 1.3, margin: '0 0 8px' }}>
+          VTBS AEROBRIDGE
+          <br />
+          CONTROL CENTER
+        </h2>
         <p style={{ color: '#666', fontSize: 14 }}>กรุณากรอก Initial และรหัสผ่าน</p>
 
         <input

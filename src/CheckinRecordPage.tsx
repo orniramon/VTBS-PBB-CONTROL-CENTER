@@ -5,6 +5,8 @@ import { getServiceTypeColor } from './serviceTypeColors'
 
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
 const HOURS_WINDOW = 8
+const MAX_ROWS_PER_SECTION = 10
+const PRESS_HOLD_MS = 1500 // เวลากดค้างก่อนขึ้นป๊อบอัพลบ (เพิ่มจากเดิมเพื่อกันกดโดนโดยไม่ตั้งใจ)
 
 type CheckinRecord = {
   id: string
@@ -64,6 +66,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
 
   const [addModalType, setAddModalType] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CheckinRecord | null>(null)
+  const [pressingId, setPressingId] = useState<string | null>(null)
   const pressTimerRef = useRef<number | null>(null)
 
   const canManage = CAN_MANAGE_ROLES.includes(role)
@@ -82,7 +85,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
           })
           if (fresh.size > 0) {
             setNewIds(fresh)
-            setTimeout(() => setNewIds(new Set()), 3200) // เลิกกระพริบหลัง ~5 รอบ (0.6s x 5)
+            setTimeout(() => setNewIds(new Set()), 3200)
           }
         }
         knownIdsRef.current = currentIds
@@ -135,16 +138,20 @@ function CheckinRecordPage({ role, myInitial }: Props) {
   // ---------- กดค้างเพื่อลบ (เฉพาะ Apron/Supervisor) ----------
   function startPress(r: CheckinRecord) {
     if (!canManage) return
-    pressTimerRef.current = window.setTimeout(() => setDeleteTarget(r), 600)
+    setPressingId(r.id)
+    pressTimerRef.current = window.setTimeout(() => {
+      setDeleteTarget(r)
+      setPressingId(null)
+    }, PRESS_HOLD_MS)
   }
   function cancelPress() {
+    setPressingId(null)
     if (pressTimerRef.current) {
       clearTimeout(pressTimerRef.current)
       pressTimerRef.current = null
     }
   }
 
-  // ---------- ลาก-วาง reorder หัวข้อ (section) ----------
   function onSectionDrop(fromType: string, toType: string) {
     const arr = [...sectionOrder]
     const fromIdx = arr.indexOf(fromType)
@@ -154,7 +161,6 @@ function CheckinRecordPage({ role, myInitial }: Props) {
     setSectionOrder(arr)
   }
 
-  // ---------- ลาก-วาง reorder คอลัมน์ ----------
   function onColDrop(fromKey: ColKey, toKey: ColKey) {
     const arr = [...cols]
     const fromIdx = arr.findIndex((c) => c.key === fromKey)
@@ -175,217 +181,239 @@ function CheckinRecordPage({ role, myInitial }: Props) {
       <style>{`
         @keyframes blinkRow { 0%,100% { background-color: transparent; } 50% { background-color: #90caf9; } }
         .rec-row-new { animation: blinkRow 0.6s 5; }
+        .rec-grid { display: flex; flex-direction: column; gap: 16px; max-width: 480px; margin: 0 auto; }
+        @media (min-width: 900px) {
+          .rec-grid { display: grid; grid-template-columns: 1fr 1fr; max-width: 1000px; font-size: 13px; }
+        }
       `}</style>
 
       {loading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
       {error && <div style={{ textAlign: 'center', color: '#c5221f', padding: 12 }}>{error}</div>}
 
-      {!loading &&
-        sectionOrder.map((type) => {
-          const sectionRecords = records.filter((r) => r.serviceType === type)
-          const color = getServiceTypeColor(type)
-          const unread = sectionRecords.filter((r) => !r.ack).length
-          const isCollapsed = collapsed[type]
+      {!loading && (
+        <div className="rec-grid">
+          {sectionOrder.map((type) => {
+            const allSectionRecords = records.filter((r) => r.serviceType === type)
+            const sectionRecords = allSectionRecords.slice(0, MAX_ROWS_PER_SECTION)
+            const color = getServiceTypeColor(type)
+            const unread = allSectionRecords.filter((r) => !r.ack).length
+            const isCollapsed = collapsed[type]
 
-          return (
-            <div key={type} style={{ maxWidth: 700, margin: '0 auto 16px' }}>
-              {/* ---------- หัวข้อ (ลากสลับตำแหน่งได้) ---------- */}
-              <div
-                draggable
-                onDragStart={(e) => e.dataTransfer.setData('text/plain', type)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  onSectionDrop(e.dataTransfer.getData('text/plain'), type)
-                }}
-                style={{
-                  background: color.bg,
-                  color: color.text,
-                  padding: '10px 14px',
-                  fontWeight: 700,
-                  fontSize: 15,
-                  borderRadius: '10px 10px 0 0',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  cursor: 'grab',
-                  userSelect: 'none',
-                }}
-              >
+            return (
+              <div key={type}>
+                {/* ---------- หัวข้อ (ลากสลับตำแหน่งได้) ---------- */}
                 <div
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}
-                  onClick={() => setCollapsed((prev) => ({ ...prev, [type]: !prev[type] }))}
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData('text/plain', type)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    onSectionDrop(e.dataTransfer.getData('text/plain'), type)
+                  }}
+                  style={{
+                    background: color.bg,
+                    color: color.text,
+                    padding: '10px 14px',
+                    fontWeight: 700,
+                    fontSize: 15,
+                    borderRadius: '10px 10px 0 0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'grab',
+                    userSelect: 'none',
+                  }}
                 >
-                  <span>{isCollapsed ? '▶' : '▼'}</span>
-                  <span>{SECTION_LABEL[type] || type}</span>
-                  {unread > 0 && (
-                    <span
-                      style={{
-                        background: '#e53935',
-                        color: '#fff',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        minWidth: 18,
-                        height: 18,
-                        borderRadius: 9,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '0 5px',
-                      }}
-                    >
-                      {unread}
-                    </span>
-                  )}
-                </div>
-                {canManage && (
-                  <button
-                    onClick={() => setAddModalType(type)}
-                    style={{
-                      background: 'rgba(0,0,0,0.15)',
-                      border: 'none',
-                      width: 24,
-                      height: 24,
-                      borderRadius: '50%',
-                      fontSize: 15,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      color: 'inherit',
-                    }}
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}
+                    onClick={() => setCollapsed((prev) => ({ ...prev, [type]: !prev[type] }))}
                   >
-                    +
-                  </button>
-                )}
-              </div>
-
-              {!isCollapsed && (
-                <div style={{ background: '#fff', borderRadius: '0 0 10px 10px', maxHeight: 420, overflow: 'auto' }}>
-                  <div style={{ minWidth: gridTemplate ? cols.reduce((s, c) => s + c.width, 0) : '100%' }}>
-                    {/* ---------- แถวหัวตาราง (ลากสลับคอลัมน์ได้) ---------- */}
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: gridTemplate,
-                        background: '#d8dde3',
-                        position: 'sticky',
-                        top: 0,
-                        fontWeight: 700,
-                        fontSize: 13,
-                      }}
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
                     >
-                      {cols.map((c) => (
-                        <div
-                          key={c.key}
-                          draggable
-                          onDragStart={(e) => e.dataTransfer.setData('text/plain', c.key)}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault()
-                            onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
-                          }}
-                          style={{
-                            padding: '8px 10px',
-                            borderRight: '1px solid #c3c9d1',
-                            cursor: 'grab',
-                            userSelect: 'none',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {c.key === 'ackGroup' ? (
-                            <div style={{ display: 'flex' }}>
-                              <span style={{ flex: 1, textAlign: 'center' }}>ACK</span>
-                              <span style={{ flex: 1, textAlign: 'center', borderLeft: '1px solid #c3c9d1' }}>เวลา ACK</span>
-                            </div>
-                          ) : (
-                            c.label
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* ---------- แถวข้อมูล ---------- */}
-                    {sectionRecords.length === 0 ? (
-                      <div style={{ padding: 16, color: '#999', fontSize: 14, textAlign: 'center' }}>ไม่มีข้อมูล</div>
-                    ) : (
-                      sectionRecords.map((r) => (
-                        <div
-                          key={r.id}
-                          className={newIds.has(r.id) ? 'rec-row-new' : ''}
-                          onMouseDown={() => startPress(r)}
-                          onMouseUp={cancelPress}
-                          onMouseLeave={cancelPress}
-                          onTouchStart={() => startPress(r)}
-                          onTouchEnd={cancelPress}
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: gridTemplate,
-                            fontSize: 13,
-                            borderBottom: '1px solid #eee',
-                          }}
-                        >
-                          {cols.map((c) => (
-                            <div
-                              key={c.key}
-                              style={{
-                                padding: '8px 10px',
-                                borderRight: '1px solid #eee',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {c.key === 'ackGroup' ? (
-                                <div style={{ display: 'flex', alignItems: 'center' }}>
-                                  <div style={{ flex: 1, textAlign: 'center' }}>
-                                    {r.ack ? (
-                                      <span style={{ color: '#137333', fontWeight: 700 }}>{r.ackByInitial || '✓'}</span>
-                                    ) : role === 'Apron' ? (
-                                      <button
-                                        onClick={() => handleAck(r.id)}
-                                        style={{
-                                          background: '#1a73e8',
-                                          color: '#fff',
-                                          border: 'none',
-                                          padding: '3px 10px',
-                                          borderRadius: 12,
-                                          fontSize: 11,
-                                          cursor: 'pointer',
-                                        }}
-                                      >
-                                        ACK
-                                      </button>
-                                    ) : (
-                                      <span style={{ color: '#c5221f' }}>ยังไม่ ACK</span>
-                                    )}
-                                  </div>
-                                  <div style={{ flex: 1, textAlign: 'center', borderLeft: '1px solid #eee', color: '#137333' }}>
-                                    {r.ackAt ? timeOf(r.ackAt) : ''}
-                                  </div>
-                                </div>
-                              ) : c.key === 'stand' ? (
-                                r.stand
-                              ) : c.key === 'flightNo' ? (
-                                r.flightNo
-                              ) : c.key === 'aircraftType' ? (
-                                r.aircraftType
-                              ) : c.key === 'initials' ? (
-                                r.initials
-                              ) : c.key === 'time' ? (
-                                timeOf(r.createdAt)
-                              ) : c.key === 'note' ? (
-                                r.note || ''
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ))
+                      <path d="M6 9l6 6 6-6" stroke={color.text} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span>{SECTION_LABEL[type] || type}</span>
+                    {unread > 0 && (
+                      <span
+                        style={{
+                          background: '#e53935',
+                          color: '#fff',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          minWidth: 18,
+                          height: 18,
+                          borderRadius: 9,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '0 5px',
+                        }}
+                      >
+                        {unread}
+                      </span>
                     )}
                   </div>
+                  {canManage && (
+                    <button
+                      onClick={() => setAddModalType(type)}
+                      style={{
+                        background: 'rgba(0,0,0,0.15)',
+                        border: 'none',
+                        width: 24,
+                        height: 24,
+                        borderRadius: '50%',
+                        fontSize: 15,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        color: 'inherit',
+                      }}
+                    >
+                      +
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
-          )
-        })}
+
+                {!isCollapsed && (
+                  <div style={{ background: '#fff', borderRadius: '0 0 10px 10px', maxHeight: 420, overflow: 'auto' }}>
+                    <div style={{ minWidth: cols.reduce((s, c) => s + c.width, 0) }}>
+                      {/* ---------- แถวหัวตาราง (ลากสลับคอลัมน์ได้) ---------- */}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: gridTemplate,
+                          background: '#d8dde3',
+                          position: 'sticky',
+                          top: 0,
+                          fontWeight: 700,
+                          fontSize: 13,
+                          color: '#000',
+                        }}
+                      >
+                        {cols.map((c) => (
+                          <div
+                            key={c.key}
+                            draggable
+                            onDragStart={(e) => e.dataTransfer.setData('text/plain', c.key)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
+                            }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRight: '1px solid #c3c9d1',
+                              cursor: 'grab',
+                              userSelect: 'none',
+                              whiteSpace: 'nowrap',
+                              color: '#000',
+                            }}
+                          >
+                            {c.key === 'ackGroup' ? (
+                              <div style={{ display: 'flex' }}>
+                                <span style={{ flex: 1, textAlign: 'center' }}>ACK</span>
+                                <span style={{ flex: 1, textAlign: 'center', borderLeft: '1px solid #c3c9d1' }}>เวลา ACK</span>
+                              </div>
+                            ) : (
+                              c.label
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* ---------- แถวข้อมูล ---------- */}
+                      {sectionRecords.length === 0 ? (
+                        <div style={{ padding: 16, color: '#999', fontSize: 14, textAlign: 'center' }}>ไม่มีข้อมูล</div>
+                      ) : (
+                        sectionRecords.map((r, idx) => (
+                          <div
+                            key={r.id}
+                            className={newIds.has(r.id) ? 'rec-row-new' : ''}
+                            onMouseDown={() => startPress(r)}
+                            onMouseUp={cancelPress}
+                            onMouseLeave={cancelPress}
+                            onTouchStart={() => startPress(r)}
+                            onTouchEnd={cancelPress}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: gridTemplate,
+                              fontSize: 13,
+                              borderBottom: '1px solid #eee',
+                              background: pressingId === r.id ? '#fff3cd' : idx % 2 === 0 ? '#ffffff' : '#f4f6f9',
+                              color: '#000',
+                              transition: 'background 0.1s',
+                            }}
+                          >
+                            {cols.map((c) => (
+                              <div
+                                key={c.key}
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRight: '1px solid #eee',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  color: '#000',
+                                }}
+                              >
+                                {c.key === 'ackGroup' ? (
+                                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    <div style={{ flex: 1, textAlign: 'center' }}>
+                                      {r.ack ? (
+                                        <span style={{ color: '#137333', fontWeight: 700 }}>{r.ackByInitial || '✓'}</span>
+                                      ) : role === 'Apron' ? (
+                                        <button
+                                          onClick={() => handleAck(r.id)}
+                                          style={{
+                                            background: '#1a73e8',
+                                            color: '#fff',
+                                            border: 'none',
+                                            padding: '3px 10px',
+                                            borderRadius: 12,
+                                            fontSize: 11,
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          ACK
+                                        </button>
+                                      ) : (
+                                        <span style={{ color: '#c5221f' }}>ยังไม่ ACK</span>
+                                      )}
+                                    </div>
+                                    <div style={{ flex: 1, textAlign: 'center', borderLeft: '1px solid #eee', color: '#000' }}>
+                                      {r.ackAt ? timeOf(r.ackAt) : ''}
+                                    </div>
+                                  </div>
+                                ) : c.key === 'stand' ? (
+                                  r.stand
+                                ) : c.key === 'flightNo' ? (
+                                  r.flightNo
+                                ) : c.key === 'aircraftType' ? (
+                                  r.aircraftType
+                                ) : c.key === 'initials' ? (
+                                  r.initials
+                                ) : c.key === 'time' ? (
+                                  timeOf(r.createdAt)
+                                ) : c.key === 'note' ? (
+                                  r.note || ''
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* ---------- ป๊อบอัพเพิ่มเชคอินด้วยมือ ---------- */}
       {addModalType && (
@@ -403,12 +431,12 @@ function CheckinRecordPage({ role, myInitial }: Props) {
       {deleteTarget && (
         <div style={overlayStyle}>
           <div style={{ ...modalBoxStyle, textAlign: 'center' }}>
-            <h3 style={{ margin: '0 0 12px', color: '#000' }}>ยืนยันการลบ</h3>
-            <p style={{ color: '#333' }}>
-              ต้องการลบ <b>{deleteTarget.serviceType}</b> เที่ยวบิน <b>{deleteTarget.flightNo}</b> หลุมจอด{' '}
-              <b>{deleteTarget.stand}</b> ใช่หรือไม่?
+            <h3 style={{ margin: '0 0 14px', color: '#000' }}>ยืนยันการลบ</h3>
+            <p style={{ color: '#333', margin: '0 0 4px' }}>
+              ต้องการลบ {deleteTarget.serviceType} เที่ยวบิน {deleteTarget.flightNo}
             </p>
-            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <p style={{ color: '#333', margin: '0 0 16px' }}>หลุมจอด {deleteTarget.stand} ใช่หรือไม่</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button onClick={confirmDelete} style={{ ...buttonStyle, background: '#c5221f', color: '#fff' }}>
                 ตกลง
               </button>
@@ -424,8 +452,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
 }
 
 // =====================================================================
-// ป๊อบอัพเพิ่มเชคอินด้วยมือ — ฟิลด์เหมือนหน้า PBB Check แต่เลือกหลุมจอดเอง
-// และระบุเวลาเชคอินเองได้ (ไม่ผูกกับ GPS)
+// ป๊อบอัพเพิ่มเชคอินด้วยมือ
 // =====================================================================
 function ManualAddModal({
   serviceType,
@@ -442,6 +469,8 @@ function ManualAddModal({
 
   const [stand, setStand] = useState('')
   const [flightNo, setFlightNo] = useState('')
+  const [eibt, setEibt] = useState('')
+  const [eobt, setEobt] = useState('')
   const [checkinTime, setCheckinTime] = useState('')
   const [aircraftType, setAircraftType] = useState('')
   const [maxL, setMaxL] = useState(1)
@@ -481,7 +510,9 @@ function ManualAddModal({
     setError('')
     if (!stand) return setError('กรุณาเลือกหลุมจอด')
     if (!flightNo.trim()) return setError('กรุณากรอกเลขเที่ยวบิน')
-    if (!checkinTime) return setError('กรุณาระบุเวลาเชคอิน')
+    if (serviceType === 'ARR' && !eibt) return setError('กรุณากรอก EIBT')
+    if (serviceType === 'DEP' && !eobt) return setError('กรุณากรอก EOBT')
+    if (!checkinTime) return setError('กรุณาระบุเวลา')
     if (!aircraftType) return setError('กรุณาเลือก Aircraft Type')
     if (!initial1) return setError('กรุณากรอก Initial L1')
 
@@ -495,6 +526,8 @@ function ManualAddModal({
           serviceType,
           flightNo: flightNo.trim().toUpperCase(),
           aircraftType,
+          eibt: serviceType === 'ARR' ? eibt : null,
+          eobt: serviceType === 'DEP' ? eobt : null,
           initial1,
           initial2: maxL >= 2 ? initial2 : null,
           initial3: maxL >= 3 ? initial3 : null,
@@ -518,17 +551,10 @@ function ManualAddModal({
         <button onClick={onClose} style={closeBtnStyle}>
           ✕
         </button>
-        <h3 style={{ marginTop: 0, color: '#000' }}>เพิ่ม {SECTION_LABEL[serviceType] || serviceType} ด้วยมือ</h3>
+        <h3 style={{ marginTop: 0, color: '#000' }}>เพิ่มข้อมูล {SECTION_LABEL[serviceType] || serviceType}</h3>
 
         <label style={labelStyle}>หลุมจอด *</label>
-        <select value={stand} onChange={(e) => setStand(e.target.value)} style={inputStyle}>
-          <option value="">-- เลือกหลุมจอด --</option>
-          {stands.map((s) => (
-            <option key={s.stand} value={s.stand}>
-              {s.stand} ({s.concourse})
-            </option>
-          ))}
-        </select>
+        <AutocompleteInput value={stand} onChange={setStand} options={stands.map((s) => ({ code: s.stand }))} placeholder="พิมพ์หรือแตะเพื่อเลือก" />
 
         <label style={labelStyle}>Flight No. *</label>
         <input
@@ -538,8 +564,18 @@ function ManualAddModal({
           style={inputStyle}
         />
 
-        <label style={labelStyle}>เวลาเชคอิน *</label>
-        <input type="time" value={checkinTime} onChange={(e) => setCheckinTime(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
+        {serviceType === 'ARR' && (
+          <>
+            <label style={labelStyle}>EIBT *</label>
+            <input type="time" value={eibt} onChange={(e) => setEibt(e.target.value)} style={timeInputStyle} />
+          </>
+        )}
+        {serviceType === 'DEP' && (
+          <>
+            <label style={labelStyle}>EOBT *</label>
+            <input type="time" value={eobt} onChange={(e) => setEobt(e.target.value)} style={timeInputStyle} />
+          </>
+        )}
 
         <label style={labelStyle}>Aircraft Type *</label>
         <AutocompleteInput value={aircraftType} onChange={setAircraftType} options={aircraftTypes.map((t) => ({ code: t }))} />
@@ -575,6 +611,9 @@ function ManualAddModal({
           </>
         )}
 
+        <label style={labelStyle}>เวลา *</label>
+        <input type="time" value={checkinTime} onChange={(e) => setCheckinTime(e.target.value)} style={timeInputStyle} />
+
         <label style={labelStyle}>หมายเหตุ</label>
         <input type="text" value={note} onChange={(e) => setNote(e.target.value)} style={inputStyle} />
 
@@ -605,6 +644,16 @@ const inputStyle = {
   boxSizing: 'border-box' as const,
   background: '#fff',
   color: '#000',
+}
+const timeInputStyle = {
+  ...inputStyle,
+  width: 'auto',
+  maxWidth: 180,
+  minWidth: 140,
+  display: 'block' as const,
+  marginLeft: 0,
+  marginRight: 'auto',
+  textAlign: 'left' as const,
 }
 const buttonStyle = { padding: '10px 20px', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' }
 const overlayStyle: CSSProperties = {
