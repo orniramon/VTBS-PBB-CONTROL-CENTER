@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export const TABS = ['VTBS PBB CHECK', 'Check-in Record', 'PBB Photo', 'PBB Operator'] as const
+export const TABS = ['VTBS PBB CHECK', 'PBB Check Record', 'PBB Photo', 'PBB Operator'] as const
 export type TabName = (typeof TABS)[number]
 
 type Props = {
@@ -24,15 +24,16 @@ function MainLayout({ initial, role, onLogout, activeTab, onTabChange, children 
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          fontSize: 15,
+          flexWrap: 'wrap',
+          gap: 6,
+          fontSize: 14,
         }}
       >
-        <span>VTBS PBB CONTROL CENTER</span>
-        <span>
+        <span style={{ fontWeight: 600 }}>VTBS AEROBRIDGE CONTROL CENTER</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
           <span style={{ background: 'rgba(255,255,255,0.2)', padding: '3px 10px', borderRadius: 20, fontSize: 13 }}>
             {role} {initial}
           </span>
-          &nbsp;&nbsp;
           <a href="#" onClick={onLogout} style={{ color: '#fff', textDecoration: 'underline' }}>
             Logout
           </a>

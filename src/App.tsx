@@ -87,7 +87,7 @@ function App() {
     return (
       <MainLayout initial={session.initial} role={session.role} onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'VTBS PBB CHECK' && <CheckinPage />}
-        {activeTab === 'Check-in Record' && <CheckinRecordPage role={session.role} myInitial={session.initial} />}
+        {activeTab === 'PBB Check Record' && <CheckinRecordPage role={session.role} myInitial={session.initial} />}
         {activeTab === 'PBB Photo' && (
           <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
         )}
@@ -123,7 +123,7 @@ function App() {
           textAlign: 'center',
         }}
       >
-        <h2 style={{ color: '#000' }}>VTBS PBB CONTROL CENTER</h2>
+        <h2 style={{ color: '#000', fontSize: 22, lineHeight: 1.3, margin: '0 0 8px' }}>VTBS AEROBRIDGE CONTROL CENTER</h2>
         <p style={{ color: '#666', fontSize: 14 }}>กรุณากรอก Initial และรหัสผ่าน</p>
 
         <input
