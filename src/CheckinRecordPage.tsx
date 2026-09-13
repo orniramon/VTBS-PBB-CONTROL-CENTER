@@ -26,13 +26,13 @@ type ColKey = 'ackGroup' | 'stand' | 'flightNo' | 'aircraftType' | 'initials' | 
 type ColDef = { key: ColKey; label: string; width: number }
 
 const DEFAULT_COLS: ColDef[] = [
-  { key: 'ackGroup', label: 'ACK', width: 150 },
-  { key: 'stand', label: 'หลุมจอด', width: 90 },
-  { key: 'flightNo', label: 'Flight No.', width: 100 },
-  { key: 'aircraftType', label: 'A/C Type', width: 90 },
-  { key: 'initials', label: 'Initial', width: 110 },
-  { key: 'time', label: 'เวลา', width: 70 },
-  { key: 'note', label: 'หมายเหตุ', width: 200 },
+  { key: 'ackGroup', label: 'ACK', width: 11 },
+  { key: 'stand', label: 'หลุมจอด', width: 10 },
+  { key: 'flightNo', label: 'Flight No.', width: 12 },
+  { key: 'aircraftType', label: 'A/C Type', width: 10 },
+  { key: 'initials', label: 'Initial', width: 11 },
+  { key: 'time', label: 'เวลา', width: 8 },
+  { key: 'note', label: 'หมายเหตุ', width: 18 },
 ]
 
 const SECTION_LABEL: Record<string, string> = {
@@ -177,7 +177,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
     return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 
-  const gridTemplate = cols.map((c) => `minmax(${c.width}px, 1fr)`).join(' ')
+  const gridTemplate = cols.map((c) => c.width + 'fr').join(' ')
 
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box' }}>
@@ -187,6 +187,12 @@ function CheckinRecordPage({ role, myInitial }: Props) {
         .rec-grid { display: flex; flex-direction: column; gap: 16px; max-width: 480px; margin: 0 auto; }
         @media (min-width: 900px) {
           .rec-grid { display: grid; grid-template-columns: 1fr 1fr; max-width: 1500px; gap: 20px; }
+        }
+        .rec-cell { font-size: 12px; padding: 6px 4px; }
+        .rec-header-cell { font-size: 11px; padding: 6px 4px; }
+        @media (max-width: 480px) {
+          .rec-cell { font-size: 10px; padding: 4px 2px; }
+          .rec-header-cell { font-size: 9.5px; padding: 4px 2px; }
         }
       `}</style>
 
@@ -293,13 +299,13 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                           position: 'sticky',
                           top: 0,
                           fontWeight: 700,
-                          fontSize: 12,
                           color: '#000',
                         }}
                       >
                         {cols.map((c) => (
                           <div
                             key={c.key}
+                            className="rec-header-cell"
                             draggable
                             onDragStart={(e) => e.dataTransfer.setData('text/plain', c.key)}
                             onDragOver={(e) => e.preventDefault()}
@@ -308,18 +314,20 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                               onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
                             }}
                             style={{
-                              padding: '6px 8px',
                               borderRight: '1px solid #c3c9d1',
                               cursor: 'grab',
                               userSelect: 'none',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
+                              textAlign: 'center',
                               color: '#000',
                             }}
                           >
                             {c.key === 'ackGroup' ? (
-                              <div style={{ display: 'flex' }}>
-                                <span style={{ flex: 1, textAlign: 'center' }}>ACK</span>
-                                <span style={{ flex: 1, textAlign: 'center', borderLeft: '1px solid #c3c9d1' }}>เวลา ACK</span>
+                              <div style={{ lineHeight: 1.2 }}>
+                                <div>ACK</div>
+                                <div style={{ fontSize: '0.85em', borderTop: '1px solid #c3c9d1', marginTop: 2, paddingTop: 2 }}>เวลา</div>
                               </div>
                             ) : (
                               c.label
@@ -340,7 +348,6 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                             style={{
                               display: 'grid',
                               gridTemplateColumns: gridTemplate,
-                              fontSize: 12,
                               borderBottom: '1px solid #eee',
                               background: pendingDeleteId === r.id ? '#fff3cd' : idx % 2 === 0 ? '#ffffff' : '#f0f3f8',
                               color: '#000',
@@ -350,42 +357,46 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                             {cols.map((c) => (
                               <div
                                 key={c.key}
+                                className="rec-cell"
                                 style={{
-                                  padding: '5px 8px',
                                   borderRight: '1px solid #eee',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
+                                  textAlign: 'center',
                                   color: '#000',
                                 }}
                               >
                                 {c.key === 'ackGroup' ? (
-                                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                                    <div style={{ flex: 1, textAlign: 'center' }}>
+                                  <div style={{ lineHeight: 1.2 }}>
+                                    <div>
                                       {r.ack ? (
                                         <span style={{ color: '#137333', fontWeight: 700 }}>{r.ackByInitial || '✓'}</span>
                                       ) : role === 'Apron' ? (
                                         <button
-                                          onClick={() => handleAck(r.id)}
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleAck(r.id)
+                                          }}
                                           style={{
                                             background: '#1a73e8',
                                             color: '#fff',
                                             border: 'none',
-                                            padding: '3px 10px',
-                                            borderRadius: 12,
-                                            fontSize: 11,
+                                            padding: '2px 6px',
+                                            borderRadius: 10,
+                                            fontSize: '0.9em',
                                             cursor: 'pointer',
                                           }}
                                         >
                                           ACK
                                         </button>
                                       ) : (
-                                        <span style={{ color: '#c5221f' }}>ยังไม่ ACK</span>
+                                        <span style={{ color: '#c5221f', fontSize: '0.85em' }}>ยังไม่ ACK</span>
                                       )}
                                     </div>
-                                    <div style={{ flex: 1, textAlign: 'center', borderLeft: '1px solid #eee', color: '#000' }}>
-                                      {r.ackAt ? timeOf(r.ackAt) : ''}
-                                    </div>
+                                    {r.ackAt && (
+                                      <div style={{ fontSize: '0.8em', color: '#137333', marginTop: 1 }}>{timeOf(r.ackAt)}</div>
+                                    )}
                                   </div>
                                 ) : c.key === 'stand' ? (
                                   r.stand
