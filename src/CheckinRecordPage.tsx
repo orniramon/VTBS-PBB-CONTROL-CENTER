@@ -402,7 +402,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                                 ) : c.key === 'time' ? (
                                   <FitText text={timeOf(r.createdAt)} />
                                 ) : c.key === 'note' ? (
-                                  <FitText text={r.note || ''} />
+                                  <FitText text={r.note || ''} minScale={0.7} />
                                 ) : null}
                               </div>
                             ))}
