@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import './App.css'
+import MainLayout from './MainLayout'
+import type { TabName } from './MainLayout'
 import CheckinPage from './CheckinPage'
+import CheckinRecordPage from './CheckinRecordPage'
 
 // TODO: เปลี่ยนเป็น URL ของ Cloudflare Worker "login" ที่ deploy ไว้จริง
 const WORKER_LOGIN_URL = 'https://login.or-niramon.workers.dev'
@@ -19,6 +22,7 @@ function App() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
+  const [activeTab, setActiveTab] = useState<TabName>('VTBS PBB CHECK')
 
   // ตอนเปิดหน้าเว็บ เช็คว่ามี session เก่าที่ยังไม่หมดอายุไหม (เหมือนระบบเดิม)
   useEffect(() => {
@@ -80,7 +84,18 @@ function App() {
 
   // ---------- หน้าหลังล็อกอินสำเร็จ ----------
   if (session) {
-    return <CheckinPage initial={session.initial} role={session.role} onLogout={handleLogout} />
+    return (
+      <MainLayout initial={session.initial} role={session.role} onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab}>
+        {activeTab === 'VTBS PBB CHECK' && <CheckinPage />}
+        {activeTab === 'Check-in Record' && <CheckinRecordPage role={session.role} myInitial={session.initial} />}
+        {activeTab === 'PBB Photo' && (
+          <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
+        )}
+        {activeTab === 'PBB Operator' && (
+          <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
+        )}
+      </MainLayout>
+    )
   }
 
   // ---------- หน้า Login ----------

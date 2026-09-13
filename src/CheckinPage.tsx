@@ -17,13 +17,7 @@ type SuccessInfo = {
   time: string
 }
 
-type Props = {
-  initial: string
-  role: string
-  onLogout: () => void
-}
-
-function CheckinPage({ initial: myInitial, role, onLogout }: Props) {
+function CheckinPage() {
   // ---------- ข้อมูลอ้างอิงที่โหลดครั้งเดียวตอนเปิดหน้า ----------
   const [aircraftTypes, setAircraftTypes] = useState<string[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -262,31 +256,7 @@ function CheckinPage({ initial: myInitial, role, onLogout }: Props) {
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
   return (
-    <div style={{ fontFamily: "'TH Sarabun PSK', 'Sarabun', sans-serif", background: '#f5f6f8', minHeight: '100vh', colorScheme: 'light' }}>
-      {/* ---------- แถบบนสุด ---------- */}
-      <div
-        style={{
-          background: '#1a73e8',
-          color: '#fff',
-          padding: '10px 16px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontSize: 15,
-        }}
-      >
-        <span>VTBS PBB CONTROL CENTER</span>
-        <span>
-          <span style={{ background: 'rgba(255,255,255,0.2)', padding: '3px 10px', borderRadius: 20, fontSize: 13 }}>
-            {role} {myInitial}
-          </span>
-          &nbsp;&nbsp;
-          <a href="#" onClick={onLogout} style={{ color: '#fff', textDecoration: 'underline' }}>
-            Logout
-          </a>
-        </span>
-      </div>
-
+    <>
       {/* ---------- การ์ดฟอร์ม ---------- */}
       <div style={{ padding: '0 12px', boxSizing: 'border-box' }}>
         <div style={{ maxWidth: 480, margin: '16px auto', background: '#fff', borderRadius: 12, padding: 20, boxSizing: 'border-box' }}>
@@ -487,7 +457,7 @@ function CheckinPage({ initial: myInitial, role, onLogout }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
