@@ -177,7 +177,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
     return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 
-  const gridTemplate = cols.map((c) => c.width + 'fr').join(' ')
+  const gridTemplate = cols.map((c) => `minmax(${c.width}px, 1fr)`).join(' ')
 
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box' }}>
