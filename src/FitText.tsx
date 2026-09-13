@@ -59,7 +59,7 @@ function FitText({ text, minScale = 1 }: Props) {
       {needsTruncate ? (
         // โหมดตัดข้อความ: ใช้ text-overflow ล้วนๆ ห้ามผสม transform เด็ดขาด
         // (ผสมกันแล้วเบราว์เซอร์คำนวณจุดตัดผิด ไม่ขึ้น "..." ให้)
-        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'underline dotted' }}>
+        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {text}
         </span>
       ) : (
