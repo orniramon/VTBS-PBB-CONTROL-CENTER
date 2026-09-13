@@ -6,7 +6,7 @@ import { getServiceTypeColor } from './serviceTypeColors'
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
 const HOURS_WINDOW = 8
 const MAX_ROWS_PER_SECTION = 10
-const PRESS_HOLD_MS = 400 // เวลากดค้างก่อนขึ้นป๊อบอัพลบ (เร็วกว่า iOS text-selection gesture)
+const DOUBLE_CLICK_MS = 400 // ระยะเวลาสูงสุดระหว่าง 2 คลิก/แตะ ถึงจะนับว่าเป็นดับเบิลคลิก
 
 type CheckinRecord = {
   id: string
@@ -66,8 +66,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
 
   const [addModalType, setAddModalType] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CheckinRecord | null>(null)
-  const [pressingId, setPressingId] = useState<string | null>(null)
-  const pressTimerRef = useRef<number | null>(null)
+  const lastClickRef = useRef<{ id: string; time: number } | null>(null)
 
   const canManage = CAN_MANAGE_ROLES.includes(role)
 
@@ -135,20 +134,17 @@ function CheckinRecordPage({ role, myInitial }: Props) {
       .catch(() => alert('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ'))
   }
 
-  // ---------- กดค้างเพื่อลบ (เฉพาะ Apron/Supervisor) ----------
-  function startPress(r: CheckinRecord) {
+  // ---------- ดับเบิลคลิก/แตะ 2 ครั้ง เพื่อลบ (เฉพาะ Apron/Supervisor) ----------
+  // เช็คเองแทนการใช้ onDoubleClick ของเบราว์เซอร์ตรงๆ เพราะพฤติกรรมบนมือถือไม่แน่นอน
+  function handleRowClick(r: CheckinRecord) {
     if (!canManage) return
-    setPressingId(r.id)
-    pressTimerRef.current = window.setTimeout(() => {
+    const now = Date.now()
+    const last = lastClickRef.current
+    if (last && last.id === r.id && now - last.time < DOUBLE_CLICK_MS) {
       setDeleteTarget(r)
-      setPressingId(null)
-    }, PRESS_HOLD_MS)
-  }
-  function cancelPress() {
-    setPressingId(null)
-    if (pressTimerRef.current) {
-      clearTimeout(pressTimerRef.current)
-      pressTimerRef.current = null
+      lastClickRef.current = null
+    } else {
+      lastClickRef.current = { id: r.id, time: now }
     }
   }
 
@@ -290,7 +286,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                           position: 'sticky',
                           top: 0,
                           fontWeight: 700,
-                          fontSize: 13,
+                          fontSize: 12,
                           color: '#000',
                         }}
                       >
@@ -305,7 +301,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                               onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
                             }}
                             style={{
-                              padding: '8px 10px',
+                              padding: '6px 8px',
                               borderRight: '1px solid #c3c9d1',
                               cursor: 'grab',
                               userSelect: 'none',
@@ -333,29 +329,22 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                           <div
                             key={r.id}
                             className={newIds.has(r.id) ? 'rec-row-new' : ''}
-                            onMouseDown={() => startPress(r)}
-                            onMouseUp={cancelPress}
-                            onMouseLeave={cancelPress}
-                            onTouchStart={() => startPress(r)}
-                            onTouchEnd={cancelPress}
+                            onClick={() => handleRowClick(r)}
                             style={{
                               display: 'grid',
                               gridTemplateColumns: gridTemplate,
-                              fontSize: 13,
+                              fontSize: 12,
                               borderBottom: '1px solid #eee',
-                              background: pressingId === r.id ? '#fff3cd' : idx % 2 === 0 ? '#ffffff' : '#e3e7f0',
+                              background: idx % 2 === 0 ? '#ffffff' : '#e3e7f0',
                               color: '#000',
-                              transition: 'background 0.1s',
-                              userSelect: 'none',
-                              WebkitUserSelect: 'none',
-                              WebkitTouchCallout: 'none',
+                              cursor: canManage ? 'pointer' : 'default',
                             }}
                           >
                             {cols.map((c) => (
                               <div
                                 key={c.key}
                                 style={{
-                                  padding: '8px 10px',
+                                  padding: '5px 8px',
                                   borderRight: '1px solid #eee',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
