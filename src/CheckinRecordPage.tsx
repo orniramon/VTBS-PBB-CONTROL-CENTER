@@ -66,7 +66,9 @@ function CheckinRecordPage({ role, myInitial }: Props) {
 
   const [addModalType, setAddModalType] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CheckinRecord | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const lastClickRef = useRef<{ id: string; time: number } | null>(null)
+  const pendingClearTimerRef = useRef<number | null>(null)
 
   const canManage = CAN_MANAGE_ROLES.includes(role)
 
@@ -142,9 +144,14 @@ function CheckinRecordPage({ role, myInitial }: Props) {
     const last = lastClickRef.current
     if (last && last.id === r.id && now - last.time < DOUBLE_CLICK_MS) {
       setDeleteTarget(r)
+      setPendingDeleteId(null)
+      if (pendingClearTimerRef.current) clearTimeout(pendingClearTimerRef.current)
       lastClickRef.current = null
     } else {
       lastClickRef.current = { id: r.id, time: now }
+      setPendingDeleteId(r.id)
+      if (pendingClearTimerRef.current) clearTimeout(pendingClearTimerRef.current)
+      pendingClearTimerRef.current = window.setTimeout(() => setPendingDeleteId(null), DOUBLE_CLICK_MS)
     }
   }
 
@@ -170,7 +177,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
     return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 
-  const gridTemplate = cols.map((c) => c.width + 'px').join(' ')
+  const gridTemplate = cols.map((c) => c.width + 'fr').join(' ')
 
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box' }}>
@@ -179,7 +186,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
         .rec-row-new { animation: blinkRow 0.6s 5; }
         .rec-grid { display: flex; flex-direction: column; gap: 16px; max-width: 480px; margin: 0 auto; }
         @media (min-width: 900px) {
-          .rec-grid { display: grid; grid-template-columns: 1fr 1fr; max-width: 1000px; font-size: 13px; }
+          .rec-grid { display: grid; grid-template-columns: 1fr 1fr; max-width: 1500px; gap: 20px; }
         }
       `}</style>
 
@@ -276,7 +283,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
 
                 {!isCollapsed && (
                   <div style={{ background: '#fff', borderRadius: '0 0 10px 10px', maxHeight: 420, overflow: 'auto' }}>
-                    <div style={{ minWidth: cols.reduce((s, c) => s + c.width, 0) }}>
+                    <div style={{ width: '100%' }}>
                       {/* ---------- แถวหัวตาราง (ลากสลับคอลัมน์ได้) ---------- */}
                       <div
                         style={{
@@ -335,7 +342,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                               gridTemplateColumns: gridTemplate,
                               fontSize: 12,
                               borderBottom: '1px solid #eee',
-                              background: idx % 2 === 0 ? '#ffffff' : '#e3e7f0',
+                              background: pendingDeleteId === r.id ? '#fff3cd' : idx % 2 === 0 ? '#ffffff' : '#f0f3f8',
                               color: '#000',
                               cursor: canManage ? 'pointer' : 'default',
                             }}
