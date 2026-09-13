@@ -319,6 +319,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                               cursor: 'grab',
                               userSelect: 'none',
                               color: '#000',
+                              minWidth: 0,
                             }}
                           >
                             {c.key === 'ackGroup' ? (
@@ -358,6 +359,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                                 style={{
                                   borderRight: '1px solid #eee',
                                   color: '#000',
+                                  minWidth: 0,
                                 }}
                               >
                                 {c.key === 'ackGroup' ? (
