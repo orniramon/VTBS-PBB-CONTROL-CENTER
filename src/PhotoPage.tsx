@@ -37,7 +37,7 @@ type Props = { role: string; myInitial: string }
 
 function PhotoPage({ role, myInitial }: Props) {
   const [rows, setRows] = useState<PhotoRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [modalTarget, setModalTarget] = useState<PhotoRow | null>(null)
@@ -46,18 +46,17 @@ function PhotoPage({ role, myInitial }: Props) {
   const canSeePhotos = role === 'Apron' || role === 'Supervisor'
 
   function load() {
-    setLoading(true)
     const params = new URLSearchParams()
     if (search) params.set('search', search)
     fetch(PHOTO_API_URL + '/photo-dashboard?' + params.toString())
       .then((res) => res.json())
       .then((data) => {
         setRows(Array.isArray(data) ? data : [])
-        setLoading(false)
+        setInitialLoading(false)
       })
       .catch(() => {
         setError('โหลดข้อมูลไม่สำเร็จ')
-        setLoading(false)
+        setInitialLoading(false)
       })
   }
 
@@ -88,10 +87,10 @@ function PhotoPage({ role, myInitial }: Props) {
         />
       </div>
 
-      {loading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
+      {initialLoading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
       {error && <div style={{ textAlign: 'center', color: '#c5221f', padding: 12 }}>{error}</div>}
 
-      {!loading &&
+      {!initialLoading &&
         CONCOURSE_PAIRS.map((pair, idx) => (
           <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
             {pair.map((concourse) => {
