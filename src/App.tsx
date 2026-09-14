@@ -5,6 +5,8 @@ import MainLayout from './MainLayout'
 import type { TabName } from './MainLayout'
 import CheckinPage from './CheckinPage'
 import CheckinRecordPage from './CheckinRecordPage'
+import StatisticsPage from './StatisticsPage'
+import PhotoPage from './PhotoPage'
 
 // TODO: เปลี่ยนเป็น URL ของ Cloudflare Worker "login" ที่ deploy ไว้จริง
 const WORKER_LOGIN_URL = 'https://login.or-niramon.workers.dev'
@@ -88,12 +90,11 @@ function App() {
       <MainLayout initial={session.initial} role={session.role} onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'VTBS PBB CHECK' && <CheckinPage />}
         {activeTab === 'PBB Check Record' && <CheckinRecordPage role={session.role} myInitial={session.initial} />}
-        {activeTab === 'PBB Photo' && (
-          <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
-        )}
+        {activeTab === 'PBB Photo' && <PhotoPage role={session.role} myInitial={session.initial} />}
         {activeTab === 'PBB Operator' && (
           <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
         )}
+        {activeTab === 'PBB Statistics' && <StatisticsPage />}
       </MainLayout>
     )
   }
