@@ -47,7 +47,7 @@ const DEFAULT_COLS: ColDef[] = [
 
 type Props = { role: string; myInitial: string }
 
-function PhotoPage({ role, myInitial }: Props) {
+function PhotoPage({ myInitial }: Props) {
   const [rows, setRows] = useState<PhotoRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState('')
