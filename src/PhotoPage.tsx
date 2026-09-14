@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
+import FitText from './FitText'
 
 const PHOTO_API_URL = 'https://photo-api.or-niramon.workers.dev'
+const HOURS_WINDOW = 10
+const MAX_ROWS_PER_CONCOURSE = 5
 
 type PhotoRow = {
   checkinId: string
@@ -10,18 +13,14 @@ type PhotoRow = {
   serviceType: string
   createdAt: string
   position: string
+  personInitial: string
   submitted: boolean
   bridgeStatus: string | null
   avdgsStatus: string | null
   photoUrls: string[]
 }
 
-const CONCOURSE_PAIRS = [
-  ['A', 'B'],
-  ['C', 'D'],
-  ['E', 'F'],
-  ['G', 'S'],
-]
+const CONCOURSE_ORDER_DEFAULT = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'S']
 const CONCOURSE_COLORS: Record<string, string> = {
   A: '#e6f5ec',
   B: '#fcedd9',
@@ -33,6 +32,19 @@ const CONCOURSE_COLORS: Record<string, string> = {
   S: '#f9ecda',
 }
 
+type ColKey = 'datetime' | 'stand' | 'flightNo' | 'pbb' | 'bridge' | 'avdgs' | 'status'
+type ColDef = { key: ColKey; label: string; width: number }
+
+const DEFAULT_COLS: ColDef[] = [
+  { key: 'datetime', label: 'วันที่-เวลา', width: 10 },
+  { key: 'stand', label: 'หลุมจอด', width: 8 },
+  { key: 'flightNo', label: 'Flight No.', width: 10 },
+  { key: 'pbb', label: 'PBB', width: 6 },
+  { key: 'bridge', label: 'การทำงานของ PBB', width: 16 },
+  { key: 'avdgs', label: 'การทำงานของ A-VDGS', width: 16 },
+  { key: 'status', label: 'สถานะการส่งรูป', width: 14 },
+]
+
 type Props = { role: string; myInitial: string }
 
 function PhotoPage({ role, myInitial }: Props) {
@@ -41,12 +53,15 @@ function PhotoPage({ role, myInitial }: Props) {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [modalTarget, setModalTarget] = useState<PhotoRow | null>(null)
-  const [lightbox, setLightbox] = useState<string[] | null>(null)
+  const [lightboxUrls, setLightboxUrls] = useState<string[] | null>(null)
+  const [lightboxIdx, setLightboxIdx] = useState(0)
 
-  const canSeePhotos = role === 'Apron' || role === 'Supervisor'
+  const [concourseOrder, setConcourseOrder] = useState<string[]>(CONCOURSE_ORDER_DEFAULT)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [cols, setCols] = useState<ColDef[]>(DEFAULT_COLS)
 
   function load() {
-    const params = new URLSearchParams()
+    const params = new URLSearchParams({ hours: String(HOURS_WINDOW) })
     if (search) params.set('search', search)
     fetch(PHOTO_API_URL + '/photo-dashboard?' + params.toString())
       .then((res) => res.json())
@@ -67,16 +82,54 @@ function PhotoPage({ role, myInitial }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search])
 
-  // จัดกลุ่ม: Concourse -> checkinId (เที่ยวบิน) -> ตำแหน่ง (L1/L2/L3)
-  const byConcourse: Record<string, Record<string, PhotoRow[]>> = {}
+  function onConcourseDrop(from: string, to: string) {
+    const arr = [...concourseOrder]
+    arr.splice(arr.indexOf(from), 1)
+    arr.splice(arr.indexOf(to), 0, from)
+    setConcourseOrder(arr)
+  }
+  function onColDrop(from: ColKey, to: ColKey) {
+    const arr = [...cols]
+    const fromIdx = arr.findIndex((c) => c.key === from)
+    const toIdx = arr.findIndex((c) => c.key === to)
+    const moved = arr.splice(fromIdx, 1)[0]
+    arr.splice(toIdx, 0, moved)
+    setCols(arr)
+  }
+
+  function fmtDate(iso: string) {
+    const d = new Date(iso)
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+    return `${d.getDate()} ${months[d.getMonth()]}`
+  }
+  function fmtTime(iso: string) {
+    return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+
+  const gridTemplate = cols.map((c) => `minmax(0, ${c.width}fr)`).join(' ')
+
+  const byConcourse: Record<string, PhotoRow[]> = {}
   rows.forEach((r) => {
-    byConcourse[r.concourse] = byConcourse[r.concourse] || {}
-    byConcourse[r.concourse][r.checkinId] = byConcourse[r.concourse][r.checkinId] || []
-    byConcourse[r.concourse][r.checkinId].push(r)
+    byConcourse[r.concourse] = byConcourse[r.concourse] || []
+    byConcourse[r.concourse].push(r)
   })
+  Object.values(byConcourse).forEach((arr) => arr.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)))
 
   return (
-    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: 1300, margin: '0 auto' }}>
+    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: 1400, margin: '0 auto' }}>
+      <style>{`
+        .photo-cell { font-size: 12px; padding: 6px 4px; }
+        .photo-header-cell { font-size: 11px; padding: 6px 4px; }
+        @media (max-width: 480px) {
+          .photo-cell { font-size: 10px; padding: 4px 2px; }
+          .photo-header-cell { font-size: 9.5px; padding: 4px 2px; }
+        }
+        .photo-grid { display: flex; flex-direction: column; gap: 16px; }
+        @media (min-width: 900px) {
+          .photo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        }
+      `}</style>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <input
           type="text"
@@ -90,79 +143,150 @@ function PhotoPage({ role, myInitial }: Props) {
       {initialLoading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
       {error && <div style={{ textAlign: 'center', color: '#c5221f', padding: 12 }}>{error}</div>}
 
-      {!initialLoading &&
-        CONCOURSE_PAIRS.map((pair, idx) => (
-          <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-            {pair.map((concourse) => {
-              const flights = byConcourse[concourse] || {}
-              const flightIds = Object.keys(flights)
-              return (
-                <div key={concourse} style={{ flex: 1, minWidth: 320, background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
-                  <div style={{ background: CONCOURSE_COLORS[concourse], padding: '8px 14px', fontWeight: 700, color: '#33403a' }}>
-                    Concourse {concourse}
-                  </div>
-                  <div style={{ maxHeight: 360, overflow: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead>
-                        <tr style={{ background: '#f0f2f5' }}>
-                          <th style={th}>เวลา</th>
-                          <th style={th}>Flight No.</th>
-                          <th style={th}>หลุมจอด</th>
-                          <th style={th}>PBB</th>
-                          <th style={th}>สถานะ</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {flightIds.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} style={{ ...td, textAlign: 'center', color: '#999' }}>
-                              ไม่มีข้อมูลไฟลท์ในช่วงเวลานี้
-                            </td>
-                          </tr>
-                        ) : (
-                          flightIds.map((fid) =>
-                            flights[fid].map((r, i) => (
-                              <tr key={fid + r.position}>
-                                {i === 0 && (
-                                  <>
-                                    <td style={td} rowSpan={flights[fid].length}>
-                                      {new Date(r.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                                    </td>
-                                    <td style={td} rowSpan={flights[fid].length}>
-                                      {r.flightNo}
-                                    </td>
-                                    <td style={td} rowSpan={flights[fid].length}>
-                                      {r.stand}
-                                    </td>
-                                  </>
-                                )}
-                                <td style={td}>{r.position}</td>
-                                <td style={td}>
-                                  {r.submitted ? (
-                                    <button
-                                      onClick={() => canSeePhotos && r.photoUrls.length > 0 && setLightbox(r.photoUrls)}
-                                      style={{ ...pillStyle, background: '#e6f4ea', color: '#137333', cursor: canSeePhotos ? 'pointer' : 'default' }}
-                                    >
-                                      ส่งแล้ว
-                                    </button>
-                                  ) : (
-                                    <button onClick={() => setModalTarget(r)} style={{ ...pillStyle, background: '#fce8e6', color: '#c5221f' }}>
-                                      ยังไม่ส่ง
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))
-                          )
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+      {!initialLoading && (
+        <div className="photo-grid">
+          {concourseOrder.map((concourse) => {
+            const flights = byConcourse[concourse] || []
+            const visibleFlights = flights.slice(0, MAX_ROWS_PER_CONCOURSE)
+            const isCollapsed = collapsed[concourse]
+
+            return (
+              <div key={concourse} style={{ minWidth: 0 }}>
+                <div
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData('text/plain', concourse)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    onConcourseDrop(e.dataTransfer.getData('text/plain'), concourse)
+                  }}
+                  onClick={() => setCollapsed((prev) => ({ ...prev, [concourse]: !prev[concourse] }))}
+                  style={{
+                    background: CONCOURSE_COLORS[concourse],
+                    padding: '8px 14px',
+                    fontWeight: 700,
+                    color: '#33403a',
+                    borderRadius: '10px 10px 0 0',
+                    cursor: 'grab',
+                    userSelect: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}>
+                    <path d="M6 9l6 6 6-6" stroke="#33403a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Concourse {concourse}
+                  {flights.length > 0 && <span style={{ fontSize: 12, fontWeight: 400 }}>({flights.length})</span>}
                 </div>
-              )
-            })}
-          </div>
-        ))}
+
+                {!isCollapsed && (
+                  <div style={{ background: '#fff', borderRadius: '0 0 10px 10px', maxHeight: 5 * 46 + 34, overflow: 'auto' }}>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: gridTemplate,
+                        background: '#d8dde3',
+                        position: 'sticky',
+                        top: 0,
+                        fontWeight: 700,
+                        color: '#000',
+                      }}
+                    >
+                      {cols.map((c) => (
+                        <div
+                          key={c.key}
+                          className="photo-header-cell"
+                          draggable
+                          onDragStart={(e) => e.dataTransfer.setData('text/plain', c.key)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
+                          }}
+                          style={{ borderRight: '1px solid #c3c9d1', cursor: 'grab', userSelect: 'none', minWidth: 0, color: '#000' }}
+                        >
+                          <FitText text={c.label} />
+                        </div>
+                      ))}
+                    </div>
+
+                    {visibleFlights.length === 0 ? (
+                      <div style={{ padding: 16, color: '#999', fontSize: 14, textAlign: 'center' }}>ไม่มีข้อมูลไฟลท์ในช่วงเวลานี้</div>
+                    ) : (
+                      visibleFlights.map((r, idx) => (
+                        <div
+                          key={r.checkinId + r.position}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: gridTemplate,
+                            borderBottom: '1px solid #eee',
+                            background: idx % 2 === 0 ? '#ffffff' : '#f0f3f8',
+                            color: '#000',
+                          }}
+                        >
+                          {cols.map((c) => (
+                            <div key={c.key} className="photo-cell" style={{ borderRight: '1px solid #eee', minWidth: 0, color: '#000' }}>
+                              {c.key === 'datetime' ? (
+                                <div style={{ textAlign: 'center', lineHeight: 1.3 }}>
+                                  <div>{fmtDate(r.createdAt)}</div>
+                                  <div>{fmtTime(r.createdAt)}</div>
+                                </div>
+                              ) : c.key === 'stand' ? (
+                                <FitText text={r.stand} />
+                              ) : c.key === 'flightNo' ? (
+                                <FitText text={r.flightNo} />
+                              ) : c.key === 'pbb' ? (
+                                <FitText text={r.position} />
+                              ) : c.key === 'bridge' ? (
+                                r.submitted ? <FitText text={r.bridgeStatus || ''} minScale={0.7} /> : ''
+                              ) : c.key === 'avdgs' ? (
+                                !r.submitted ? (
+                                  ''
+                                ) : r.position !== 'L1' || r.serviceType !== 'ARR' ? (
+                                  <div style={{ textAlign: 'center' }}>-</div>
+                                ) : (
+                                  <FitText text={r.avdgsStatus || ''} minScale={0.7} />
+                                )
+                              ) : c.key === 'status' ? (
+                                <div style={{ textAlign: 'center' }}>
+                                  <button
+                                    onClick={() => {
+                                      if (r.submitted) {
+                                        setLightboxUrls(r.photoUrls)
+                                        setLightboxIdx(0)
+                                      } else {
+                                        setModalTarget(r)
+                                      }
+                                    }}
+                                    style={{
+                                      border: 'none',
+                                      borderRadius: 14,
+                                      padding: '3px 10px',
+                                      fontSize: '0.95em',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      background: r.submitted ? '#e6f4ea' : '#fce8e6',
+                                      color: r.submitted ? '#137333' : '#c5221f',
+                                    }}
+                                  >
+                                    {r.personInitial} {r.submitted ? 'ส่งแล้ว' : 'ยังไม่ส่ง'}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {modalTarget && (
         <SubmitPhotoModal
@@ -176,12 +300,31 @@ function PhotoPage({ role, myInitial }: Props) {
         />
       )}
 
-      {lightbox && (
-        <div style={overlayStyle} onClick={() => setLightbox(null)}>
-          <div style={{ maxWidth: '90vw', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {lightbox.map((url) => (
-                <img key={url} src={url} alt="" style={{ maxWidth: 280, borderRadius: 8 }} />
+      {lightboxUrls && (
+        <div style={overlayStyle}>
+          <div style={{ ...modalBoxStyle, maxWidth: 480, textAlign: 'center' }}>
+            <button onClick={() => setLightboxUrls(null)} style={closeBtnStyle}>
+              ✕
+            </button>
+            <h3 style={{ margin: '0 0 12px', color: '#000', textAlign: 'left' }}>รูปภาพที่ส่ง</h3>
+            <img src={lightboxUrls[lightboxIdx]} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 10 }} />
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', justifyContent: 'center' }}>
+              {lightboxUrls.map((url, i) => (
+                <img
+                  key={url}
+                  src={url}
+                  alt=""
+                  onClick={() => setLightboxIdx(i)}
+                  style={{
+                    width: 50,
+                    height: 50,
+                    objectFit: 'cover',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    border: i === lightboxIdx ? '2px solid #1a73e8' : '2px solid transparent',
+                    flexShrink: 0,
+                  }}
+                />
               ))}
             </div>
           </div>
@@ -264,7 +407,7 @@ function SubmitPhotoModal({
 
     setSubmitting(true)
     try {
-      const photos = await Promise.all(Array.from(files).map((f) => compressImageFile(f, 900, 0.55)))
+      const photos = await Promise.all(Array.from(files).map((f) => compressImageFile(f, 800, 0.5)))
       const res = await fetch(PHOTO_API_URL + '/submit-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -294,9 +437,10 @@ function SubmitPhotoModal({
         <button onClick={onClose} style={closeBtnStyle}>
           ✕
         </button>
-        <h3 style={{ marginTop: 0, color: '#000' }}>
-          ส่งรูป {row.flightNo} {row.stand} {row.position}
-        </h3>
+        <h3 style={{ marginTop: 0, marginBottom: 4, color: '#000', textAlign: 'center' }}>แนบรูป</h3>
+        <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 16, fontSize: 15 }}>
+          ({row.serviceType}) {row.flightNo} หลุมจอด {row.stand} PBB {row.position}
+        </div>
 
         <label style={labelStyle}>สถานะสะพานเทียบฯ *</label>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -355,10 +499,7 @@ function SubmitPhotoModal({
   )
 }
 
-const th = { padding: '6px 8px', textAlign: 'left' as const, color: '#000', borderBottom: '2px solid #ddd', whiteSpace: 'nowrap' as const }
-const td = { padding: '6px 8px', color: '#000', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' as const }
-const pillStyle = { border: 'none', borderRadius: 14, padding: '3px 10px', fontSize: 11, fontWeight: 600 }
-const labelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '14px 0 6px', color: '#000' }
+const labelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '14px 0 6px', color: '#000', textAlign: 'left' as const }
 const inputStyle = { width: '100%', padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' as const, background: '#fff', color: '#000' }
 const toggleStyle = { flex: 1, padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, cursor: 'pointer' }
 const buttonStyle = { padding: 12, border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' }
