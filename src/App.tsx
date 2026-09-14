@@ -5,7 +5,6 @@ import MainLayout from './MainLayout'
 import type { TabName } from './MainLayout'
 import CheckinPage from './CheckinPage'
 import CheckinRecordPage from './CheckinRecordPage'
-import StatisticsPage from './StatisticsPage'
 import PhotoPage from './PhotoPage'
 
 // TODO: เปลี่ยนเป็น URL ของ Cloudflare Worker "login" ที่ deploy ไว้จริง
@@ -94,7 +93,6 @@ function App() {
         {activeTab === 'PBB Operator' && (
           <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
         )}
-        {activeTab === 'PBB Statistics' && <StatisticsPage />}
       </MainLayout>
     )
   }
