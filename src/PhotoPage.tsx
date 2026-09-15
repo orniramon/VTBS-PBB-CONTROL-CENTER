@@ -12,6 +12,8 @@ type PhotoRow = {
   stand: string
   serviceType: string
   createdAt: string
+  aircraftType: string
+  eibt: string | null
   position: string
   personInitial: string
   submitted: boolean
@@ -51,13 +53,14 @@ const DEFAULT_COLS: ColDef[] = [
 
 type FlightGroup = { checkinId: string; positions: PhotoRow[] }
 
-type Props = { myInitial: string }
+type Props = { myInitial: string; role: string }
 
-function PhotoPage({ myInitial }: Props) {
+const SEARCH_ALLOWED_ROLES = ['Supervisor', 'Apron', 'Sup. PBB Operator']
+
+function PhotoPage({ myInitial, role }: Props) {
   const [rows, setRows] = useState<PhotoRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
   const [modalTarget, setModalTarget] = useState<PhotoRow | null>(null)
   const [lightboxUrls, setLightboxUrls] = useState<string[] | null>(null)
   const [lightboxIdx, setLightboxIdx] = useState(0)
@@ -69,7 +72,6 @@ function PhotoPage({ myInitial }: Props) {
 
   function load() {
     const params = new URLSearchParams({ hours: String(HOURS_WINDOW) })
-    if (search) params.set('search', search)
     fetch(PHOTO_API_URL + '/photo-dashboard?' + params.toString())
       .then((res) => res.json())
       .then((data) => {
@@ -96,7 +98,7 @@ function PhotoPage({ myInitial }: Props) {
     const timer = setInterval(load, 10000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
+  }, [])
 
   function onConcourseDrop(from: string, to: string) {
     const arr = [...concourseOrder]
@@ -155,20 +157,15 @@ function PhotoPage({ myInitial }: Props) {
         }
       `}</style>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
-        <input
-          type="text"
-          placeholder="กรอก Flight No. หรือ หลุมจอด"
-          value={search}
-          onChange={(e) => setSearch(e.target.value.toUpperCase())}
-          style={{ padding: 10, border: '1px solid #ccc', borderRadius: 20, fontSize: 14, minWidth: 220, background: '#fff', color: '#000' }}
-        />
-        <button
-          onClick={() => setShowSearchModal(true)}
-          style={{ padding: '10px 18px', border: 'none', borderRadius: 20, fontSize: 14, fontWeight: 600, cursor: 'pointer', background: '#1a73e8', color: '#fff', whiteSpace: 'nowrap' }}
-        >
-          🔍 ค้นหาข้อมูลย้อนหลัง
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        {SEARCH_ALLOWED_ROLES.includes(role) && (
+          <button
+            onClick={() => setShowSearchModal(true)}
+            style={{ padding: '10px 20px', border: 'none', borderRadius: 20, fontSize: 14, fontWeight: 600, cursor: 'pointer', background: '#1a73e8', color: '#fff' }}
+          >
+            ค้นหา
+          </button>
+        )}
       </div>
 
       {initialLoading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
@@ -534,6 +531,7 @@ function SearchModal({
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
   const [results, setResults] = useState<PhotoRow[] | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   function toBangkokIso(dateStr: string, timeStr: string) {
     return `${dateStr}T${timeStr}:00+07:00`
@@ -542,6 +540,7 @@ function SearchModal({
   async function handleSearch() {
     setError('')
     setResults(null)
+    setExpandedId(null)
     if (!fromDate || !toDate) return setError('กรุณาระบุวันที่ให้ครบทั้งสองช่อง')
 
     setSearching(true)
@@ -563,10 +562,26 @@ function SearchModal({
     }
   }
 
-  function fmt(iso: string) {
+  function fmtDateTime(iso: string) {
     const d = new Date(iso)
     return d.toLocaleDateString('th-TH') + ' ' + d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
   }
+  function fmtTimeOnly(iso: string | null) {
+    if (!iso) return '-'
+    return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+
+  const groups: FlightGroup[] = []
+  ;(results || []).forEach((r) => {
+    let g = groups.find((x) => x.checkinId === r.checkinId)
+    if (!g) {
+      g = { checkinId: r.checkinId, positions: [] }
+      groups.push(g)
+    }
+    g.positions.push(r)
+  })
+  groups.forEach((g) => g.positions.sort((a, b) => a.position.localeCompare(b.position)))
+  groups.sort((a, b) => (a.positions[0].createdAt < b.positions[0].createdAt ? 1 : -1))
 
   return (
     <div style={overlayStyle}>
@@ -574,28 +589,17 @@ function SearchModal({
         <button onClick={onClose} style={closeBtnStyle}>
           ✕
         </button>
-        <h3 style={{ marginTop: 0, color: '#000', textAlign: 'left' }}>ค้นหาข้อมูลย้อนหลัง</h3>
+        <h3 style={{ marginTop: 0, color: '#000', textAlign: 'left' }}>ค้นหา</h3>
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 140 }}>
-            <label style={labelStyle}>จากวันที่ *</label>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inputStyle} />
-          </div>
-          <div style={{ flex: 1, minWidth: 110 }}>
-            <label style={labelStyle}>เวลา *</label>
-            <input type="time" value={fromTime} onChange={(e) => setFromTime(e.target.value)} style={inputStyle} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
-          <div style={{ flex: 1, minWidth: 140 }}>
-            <label style={labelStyle}>ถึงวันที่ *</label>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inputStyle} />
-          </div>
-          <div style={{ flex: 1, minWidth: 110 }}>
-            <label style={labelStyle}>เวลา *</label>
-            <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)} style={inputStyle} />
-          </div>
-        </div>
+        <label style={labelStyle}>จากวันที่ *</label>
+        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inputStyle} />
+        <label style={labelStyle}>เวลา *</label>
+        <input type="time" value={fromTime} onChange={(e) => setFromTime(e.target.value)} style={inputStyle} />
+
+        <label style={labelStyle}>ถึงวันที่ *</label>
+        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inputStyle} />
+        <label style={labelStyle}>เวลา *</label>
+        <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)} style={inputStyle} />
 
         <label style={labelStyle}>Flight No. (ถ้ามี)</label>
         <input type="text" value={flightNo} onChange={(e) => setFlightNo(e.target.value.toUpperCase())} style={inputStyle} />
@@ -610,39 +614,95 @@ function SearchModal({
 
         {results && (
           <div style={{ marginTop: 16, borderTop: '1px solid #eee', paddingTop: 12 }}>
-            {results.length === 0 ? (
+            {groups.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#999', padding: 16 }}>ไม่พบข้อมูล</div>
             ) : (
-              <div style={{ maxHeight: 320, overflow: 'auto' }}>
-                {results.map((r) => (
-                  <div
-                    key={r.checkinId + r.position}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 4px', borderBottom: '1px solid #f0f0f0', fontSize: 13, color: '#000' }}
-                  >
-                    <div>
-                      <div>
-                        <b>{r.flightNo}</b> — {r.stand} — {r.position}
+              <div style={{ maxHeight: 360, overflow: 'auto' }}>
+                {groups.map((g) => {
+                  const first = g.positions[0]
+                  const isOpen = expandedId === g.checkinId
+                  return (
+                    <div key={g.checkinId} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <div
+                        onClick={() => setExpandedId(isOpen ? null : g.checkinId)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 8px',
+                          cursor: 'pointer',
+                          background: isOpen ? '#fff3cd' : 'transparent',
+                        }}
+                      >
+                        <div style={{ fontSize: 13, color: '#000' }}>
+                          <div style={{ color: '#666', fontSize: 12 }}>{fmtDateTime(first.createdAt)}</div>
+                          <div>
+                            <b>{first.stand}</b> — <b>{first.flightNo}</b>
+                            {first.serviceType !== 'ARR' && <span style={{ fontSize: 12, color: '#666' }}> ({first.serviceType})</span>}
+                          </div>
+                        </div>
+                        <span style={{ color: '#666', fontSize: 12 }}>{isOpen ? '▲' : '▼'}</span>
                       </div>
-                      <div style={{ color: '#666', fontSize: 12 }}>{fmt(r.createdAt)}</div>
+
+                      {isOpen && (
+                        <div style={{ padding: '0 8px 12px' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr>
+                                <th style={detailTh}>A/C Type</th>
+                                <th style={detailTh}>EIBT</th>
+                                <th style={detailTh}>PBB</th>
+                                <th style={detailTh}>
+                                  การทำงาน
+                                  <br />
+                                  PBB
+                                </th>
+                                <th style={detailTh}>
+                                  การทำงาน
+                                  <br />
+                                  A-VDGS
+                                </th>
+                                <th style={detailTh}>สถานะการส่งรูป</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {g.positions.map((r) => (
+                                <tr key={r.position}>
+                                  <td style={detailTd}>
+                                    <FitText text={r.aircraftType} />
+                                  </td>
+                                  <td style={detailTd}>{r.serviceType === 'ARR' ? fmtTimeOnly(r.eibt) : '-'}</td>
+                                  <td style={detailTd}>{r.position}</td>
+                                  <td style={detailTd}>{r.submitted ? <FitText text={r.bridgeStatus || ''} minScale={0.7} /> : ''}</td>
+                                  <td style={detailTd}>
+                                    {!r.submitted ? '' : r.position !== 'L1' || r.serviceType !== 'ARR' ? '-' : <FitText text={r.avdgsStatus || ''} minScale={0.7} />}
+                                  </td>
+                                  <td style={detailTd}>
+                                    <button
+                                      onClick={() => (r.submitted ? onOpenLightbox(r.photoUrls) : onOpenSubmit(r))}
+                                      style={{
+                                        border: 'none',
+                                        borderRadius: 14,
+                                        padding: '3px 10px',
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        background: r.submitted ? '#e6f4ea' : '#fce8e6',
+                                        color: r.submitted ? '#137333' : '#c5221f',
+                                      }}
+                                    >
+                                      {r.personInitial} {r.submitted ? 'ส่งแล้ว' : 'ยังไม่ส่ง'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
-                    <button
-                      onClick={() => (r.submitted ? onOpenLightbox(r.photoUrls) : onOpenSubmit(r))}
-                      style={{
-                        border: 'none',
-                        borderRadius: 14,
-                        padding: '4px 12px',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        background: r.submitted ? '#e6f4ea' : '#fce8e6',
-                        color: r.submitted ? '#137333' : '#c5221f',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {r.personInitial} {r.submitted ? 'ส่งแล้ว' : 'ยังไม่ส่ง'}
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -651,6 +711,9 @@ function SearchModal({
     </div>
   )
 }
+
+const detailTh = { padding: '6px 4px', textAlign: 'center' as const, color: '#666', fontWeight: 600, fontSize: 11 }
+const detailTd = { padding: '6px 4px', textAlign: 'center' as const, color: '#000' }
 
 function SubmitPhotoModal({
   row,

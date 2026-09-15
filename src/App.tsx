@@ -89,7 +89,7 @@ function App() {
       <MainLayout initial={session.initial} role={session.role} onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'VTBS PBB CHECK' && <CheckinPage />}
         {activeTab === 'PBB Check Record' && <CheckinRecordPage role={session.role} myInitial={session.initial} />}
-        {activeTab === 'PBB Photo' && <PhotoPage myInitial={session.initial} />}
+        {activeTab === 'PBB Photo' && <PhotoPage myInitial={session.initial} role={session.role} />}
         {activeTab === 'PBB Operator' && (
           <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
         )}
