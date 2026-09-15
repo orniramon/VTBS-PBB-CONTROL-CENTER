@@ -592,14 +592,14 @@ function SearchModal({
         <h3 style={{ marginTop: 0, color: '#000', textAlign: 'left' }}>ค้นหา</h3>
 
         <label style={labelStyle}>จากวันที่ *</label>
-        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inputStyle} />
+        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={dateTimeInputStyle} />
         <label style={labelStyle}>เวลา *</label>
-        <input type="time" value={fromTime} onChange={(e) => setFromTime(e.target.value)} style={inputStyle} />
+        <input type="time" value={fromTime} onChange={(e) => setFromTime(e.target.value)} style={dateTimeInputStyle} />
 
         <label style={labelStyle}>ถึงวันที่ *</label>
-        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inputStyle} />
+        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={dateTimeInputStyle} />
         <label style={labelStyle}>เวลา *</label>
-        <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)} style={inputStyle} />
+        <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)} style={dateTimeInputStyle} />
 
         <label style={labelStyle}>Flight No. (ถ้ามี)</label>
         <input type="text" value={flightNo} onChange={(e) => setFlightNo(e.target.value.toUpperCase())} style={inputStyle} />
@@ -634,9 +634,9 @@ function SearchModal({
                           background: isOpen ? '#fff3cd' : 'transparent',
                         }}
                       >
-                        <div style={{ fontSize: 13, color: '#000' }}>
-                          <div style={{ color: '#666', fontSize: 12 }}>{fmtDateTime(first.createdAt)}</div>
-                          <div>
+                        <div style={{ fontSize: 13, color: '#000', textAlign: 'left' }}>
+                          <div style={{ color: '#666', fontSize: 12, textAlign: 'left' }}>{fmtDateTime(first.createdAt)}</div>
+                          <div style={{ textAlign: 'left' }}>
                             <b>{first.stand}</b> — <b>{first.flightNo}</b>
                             {first.serviceType !== 'ARR' && <span style={{ fontSize: 12, color: '#666' }}> ({first.serviceType})</span>}
                           </div>
@@ -646,23 +646,23 @@ function SearchModal({
 
                       {isOpen && (
                         <div style={{ padding: '0 8px 12px' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 12 }}>
                             <thead>
                               <tr>
-                                <th style={detailTh}>A/C Type</th>
-                                <th style={detailTh}>EIBT</th>
-                                <th style={detailTh}>PBB</th>
-                                <th style={detailTh}>
+                                <th style={{ ...detailTh, width: '13%' }}>A/C Type</th>
+                                <th style={{ ...detailTh, width: '11%' }}>EIBT</th>
+                                <th style={{ ...detailTh, width: '9%' }}>PBB</th>
+                                <th style={{ ...detailTh, width: '24%' }}>
                                   การทำงาน
                                   <br />
                                   PBB
                                 </th>
-                                <th style={detailTh}>
+                                <th style={{ ...detailTh, width: '24%' }}>
                                   การทำงาน
                                   <br />
                                   A-VDGS
                                 </th>
-                                <th style={detailTh}>สถานะการส่งรูป</th>
+                                <th style={{ ...detailTh, width: '19%' }}>สถานะการส่งรูป</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -857,6 +857,7 @@ function SubmitPhotoModal({
 
 const labelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '14px 0 6px', color: '#000', textAlign: 'left' as const }
 const inputStyle = { width: '100%', padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' as const, background: '#fff', color: '#000' }
+const dateTimeInputStyle = { ...inputStyle, width: 'auto', maxWidth: '100%', display: 'block' as const }
 const toggleStyle = { flex: 1, padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, cursor: 'pointer' }
 const buttonStyle = { padding: 12, border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' }
 const overlayStyle = {
