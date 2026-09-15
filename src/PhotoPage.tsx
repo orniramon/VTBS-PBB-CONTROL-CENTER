@@ -28,7 +28,7 @@ const CONCOURSE_COLORS: Record<string, string> = {
   E: '#eff5e2',
   F: '#f1ecf8',
   G: '#e2f5f4',
-  S: '#ffe9a3',
+  S: '#fff4d6',
 }
 function getConcourseColor(concourse: string) {
   if (CONCOURSE_COLORS[concourse]) return CONCOURSE_COLORS[concourse]
@@ -61,6 +61,7 @@ function PhotoPage({ myInitial }: Props) {
   const [modalTarget, setModalTarget] = useState<PhotoRow | null>(null)
   const [lightboxUrls, setLightboxUrls] = useState<string[] | null>(null)
   const [lightboxIdx, setLightboxIdx] = useState(0)
+  const [showSearchModal, setShowSearchModal] = useState(false)
 
   const [concourseOrder, setConcourseOrder] = useState<string[]>([])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
@@ -154,7 +155,7 @@ function PhotoPage({ myInitial }: Props) {
         }
       `}</style>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
         <input
           type="text"
           placeholder="กรอก Flight No. หรือ หลุมจอด"
@@ -162,6 +163,12 @@ function PhotoPage({ myInitial }: Props) {
           onChange={(e) => setSearch(e.target.value.toUpperCase())}
           style={{ padding: 10, border: '1px solid #ccc', borderRadius: 20, fontSize: 14, minWidth: 220, background: '#fff', color: '#000' }}
         />
+        <button
+          onClick={() => setShowSearchModal(true)}
+          style={{ padding: '10px 18px', border: 'none', borderRadius: 20, fontSize: 14, fontWeight: 600, cursor: 'pointer', background: '#1a73e8', color: '#fff', whiteSpace: 'nowrap' }}
+        >
+          🔍 ค้นหาข้อมูลย้อนหลัง
+        </button>
       </div>
 
       {initialLoading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
@@ -289,6 +296,17 @@ function PhotoPage({ myInitial }: Props) {
             )
           })}
         </div>
+      )}
+
+      {showSearchModal && (
+        <SearchModal
+          onClose={() => setShowSearchModal(false)}
+          onOpenSubmit={setModalTarget}
+          onOpenLightbox={(urls) => {
+            setLightboxUrls(urls)
+            setLightboxIdx(0)
+          }}
+        />
       )}
 
       {modalTarget && (
@@ -492,6 +510,146 @@ function compressImageFile(file: File, maxDim: number, quality: number): Promise
     }
     reader.readAsDataURL(file)
   })
+}
+
+// =====================================================================
+// ป๊อบอัพค้นหาข้อมูลย้อนหลัง — ต้องระบุช่วงวันที่+เวลาเสมอ (Flight No./
+// หลุมจอด เป็นตัวกรองเสริม ไม่บังคับ)
+// =====================================================================
+function SearchModal({
+  onClose,
+  onOpenSubmit,
+  onOpenLightbox,
+}: {
+  onClose: () => void
+  onOpenSubmit: (row: PhotoRow) => void
+  onOpenLightbox: (urls: string[]) => void
+}) {
+  const [fromDate, setFromDate] = useState('')
+  const [fromTime, setFromTime] = useState('00:00')
+  const [toDate, setToDate] = useState('')
+  const [toTime, setToTime] = useState('23:59')
+  const [flightNo, setFlightNo] = useState('')
+  const [stand, setStand] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [error, setError] = useState('')
+  const [results, setResults] = useState<PhotoRow[] | null>(null)
+
+  function toBangkokIso(dateStr: string, timeStr: string) {
+    return `${dateStr}T${timeStr}:00+07:00`
+  }
+
+  async function handleSearch() {
+    setError('')
+    setResults(null)
+    if (!fromDate || !toDate) return setError('กรุณาระบุวันที่ให้ครบทั้งสองช่อง')
+
+    setSearching(true)
+    try {
+      const params = new URLSearchParams({
+        from: toBangkokIso(fromDate, fromTime),
+        to: toBangkokIso(toDate, toTime),
+      })
+      if (flightNo) params.set('search', flightNo)
+      const res = await fetch(PHOTO_API_URL + '/photo-dashboard?' + params.toString())
+      const data = await res.json()
+      let list: PhotoRow[] = Array.isArray(data) ? data : []
+      if (stand) list = list.filter((r) => r.stand.toUpperCase().includes(stand.toUpperCase()))
+      setResults(list)
+    } catch {
+      setError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  function fmt(iso: string) {
+    const d = new Date(iso)
+    return d.toLocaleDateString('th-TH') + ' ' + d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+
+  return (
+    <div style={overlayStyle}>
+      <div style={{ ...modalBoxStyle, maxWidth: 560 }}>
+        <button onClick={onClose} style={closeBtnStyle}>
+          ✕
+        </button>
+        <h3 style={{ marginTop: 0, color: '#000', textAlign: 'left' }}>ค้นหาข้อมูลย้อนหลัง</h3>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <label style={labelStyle}>จากวันที่ *</label>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ flex: 1, minWidth: 110 }}>
+            <label style={labelStyle}>เวลา *</label>
+            <input type="time" value={fromTime} onChange={(e) => setFromTime(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <label style={labelStyle}>ถึงวันที่ *</label>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ flex: 1, minWidth: 110 }}>
+            <label style={labelStyle}>เวลา *</label>
+            <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+
+        <label style={labelStyle}>Flight No. (ถ้ามี)</label>
+        <input type="text" value={flightNo} onChange={(e) => setFlightNo(e.target.value.toUpperCase())} style={inputStyle} />
+
+        <label style={labelStyle}>หลุมจอด (ถ้ามี)</label>
+        <input type="text" value={stand} onChange={(e) => setStand(e.target.value.toUpperCase())} style={inputStyle} />
+
+        <button onClick={handleSearch} disabled={searching} style={{ ...buttonStyle, background: '#1a73e8', color: '#fff', width: '100%', marginTop: 14 }}>
+          {searching ? 'กำลังค้นหา...' : 'ค้นหา'}
+        </button>
+        {error && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{error}</div>}
+
+        {results && (
+          <div style={{ marginTop: 16, borderTop: '1px solid #eee', paddingTop: 12 }}>
+            {results.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#999', padding: 16 }}>ไม่พบข้อมูล</div>
+            ) : (
+              <div style={{ maxHeight: 320, overflow: 'auto' }}>
+                {results.map((r) => (
+                  <div
+                    key={r.checkinId + r.position}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 4px', borderBottom: '1px solid #f0f0f0', fontSize: 13, color: '#000' }}
+                  >
+                    <div>
+                      <div>
+                        <b>{r.flightNo}</b> — {r.stand} — {r.position}
+                      </div>
+                      <div style={{ color: '#666', fontSize: 12 }}>{fmt(r.createdAt)}</div>
+                    </div>
+                    <button
+                      onClick={() => (r.submitted ? onOpenLightbox(r.photoUrls) : onOpenSubmit(r))}
+                      style={{
+                        border: 'none',
+                        borderRadius: 14,
+                        padding: '4px 12px',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        background: r.submitted ? '#e6f4ea' : '#fce8e6',
+                        color: r.submitted ? '#137333' : '#c5221f',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {r.personInitial} {r.submitted ? 'ส่งแล้ว' : 'ยังไม่ส่ง'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function SubmitPhotoModal({
