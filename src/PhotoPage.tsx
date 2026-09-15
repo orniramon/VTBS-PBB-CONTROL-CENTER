@@ -4,7 +4,6 @@ import { getServiceTypeColor } from './serviceTypeColors'
 
 const PHOTO_API_URL = 'https://photo-api.or-niramon.workers.dev'
 const HOURS_WINDOW = 10
-const MAX_FLIGHTS_PER_CONCOURSE = 5
 
 type PhotoRow = {
   checkinId: string
@@ -29,7 +28,7 @@ const CONCOURSE_COLORS: Record<string, string> = {
   E: '#eff5e2',
   F: '#f1ecf8',
   G: '#e2f5f4',
-  S: '#f9ecda',
+  S: '#f3e0f7',
 }
 function getConcourseColor(concourse: string) {
   if (CONCOURSE_COLORS[concourse]) return CONCOURSE_COLORS[concourse]
@@ -172,9 +171,8 @@ function PhotoPage({ myInitial }: Props) {
         <div className="photo-grid">
           {concourseOrder.map((concourse) => {
             const groups = byConcourse[concourse] || []
-            const visibleGroups = groups.slice(0, MAX_FLIGHTS_PER_CONCOURSE)
             const isCollapsed = collapsed[concourse]
-            const totalPositionRows = visibleGroups.reduce((s, g) => s + g.positions.length, 0)
+            const totalPositionRows = groups.reduce((s, g) => s + g.positions.length, 0)
 
             return (
               <div key={concourse} style={{ minWidth: 0 }}>
@@ -257,7 +255,7 @@ function PhotoPage({ myInitial }: Props) {
                         (() => {
                           let cursor = 2 // แถวที่ 1 คือหัวตาราง
                           const bg = (groupIdx: number) => (groupIdx % 2 === 0 ? '#ffffff' : '#f0f3f8')
-                          return visibleGroups.map((g, groupIdx) => {
+                          return groups.map((g, groupIdx) => {
                             const startRow = cursor
                             const span = g.positions.length
                             const first = g.positions[0]
@@ -401,7 +399,7 @@ function FlightGroupCells({
               <div style={{ textAlign: 'center' }}>
                 <FitText text={first.flightNo} />
                 {first.serviceType !== 'ARR' && (
-                  <div style={{ fontSize: '0.75em', color: '#666' }}>({first.serviceType})</div>
+                  <div style={{ fontSize: '0.6em', color: '#666' }}>({first.serviceType})</div>
                 )}
               </div>
             </div>

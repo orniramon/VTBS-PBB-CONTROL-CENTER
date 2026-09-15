@@ -5,8 +5,7 @@ import { getServiceTypeColor } from './serviceTypeColors'
 import FitText from './FitText'
 
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
-const HOURS_WINDOW = 8
-const MAX_ROWS_PER_SECTION = 10
+const HOURS_WINDOW = 5
 const DOUBLE_CLICK_MS = 400 // ระยะเวลาสูงสุดระหว่าง 2 คลิก/แตะ ถึงจะนับว่าเป็นดับเบิลคลิก
 
 type CheckinRecord = {
@@ -204,7 +203,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
         <div className="rec-grid">
           {sectionOrder.map((type) => {
             const allSectionRecords = records.filter((r) => r.serviceType === type)
-            const sectionRecords = allSectionRecords.slice(0, MAX_ROWS_PER_SECTION)
+            const sectionRecords = allSectionRecords
             const color = getServiceTypeColor(type)
             const unread = allSectionRecords.filter((r) => !r.ack).length
             const isCollapsed = collapsed[type]
