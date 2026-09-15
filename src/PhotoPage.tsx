@@ -20,7 +20,6 @@ type PhotoRow = {
   photoUrls: string[]
 }
 
-const CONCOURSE_ORDER_DEFAULT = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'S']
 const CONCOURSE_COLORS: Record<string, string> = {
   A: '#e6f5ec',
   B: '#fcedd9',
@@ -31,18 +30,23 @@ const CONCOURSE_COLORS: Record<string, string> = {
   G: '#e2f5f4',
   S: '#f9ecda',
 }
+function getConcourseColor(concourse: string) {
+  if (CONCOURSE_COLORS[concourse]) return CONCOURSE_COLORS[concourse]
+  const letter = concourse.replace(/[0-9]+$/, '') // 'S1' -> 'S'
+  return CONCOURSE_COLORS[letter] || '#e0e0e0'
+}
 
 type ColKey = 'datetime' | 'stand' | 'flightNo' | 'pbb' | 'bridge' | 'avdgs' | 'status'
 type ColDef = { key: ColKey; label: string; width: number }
 
 const DEFAULT_COLS: ColDef[] = [
-  { key: 'datetime', label: 'วันที่-เวลา', width: 10 },
+  { key: 'datetime', label: 'วันที่\nเวลา', width: 10 },
   { key: 'stand', label: 'หลุมจอด', width: 8 },
   { key: 'flightNo', label: 'Flight No.', width: 10 },
   { key: 'pbb', label: 'PBB', width: 6 },
-  { key: 'bridge', label: 'การทำงานของ PBB', width: 16 },
-  { key: 'avdgs', label: 'การทำงานของ A-VDGS', width: 16 },
-  { key: 'status', label: 'สถานะการส่งรูป', width: 14 },
+  { key: 'bridge', label: 'การทำงาน\nPBB', width: 16 },
+  { key: 'avdgs', label: 'การทำงาน\nA-VDGS', width: 16 },
+  { key: 'status', label: 'สถานะ\nการส่งรูป', width: 14 },
 ]
 
 type Props = { role: string; myInitial: string }
@@ -56,7 +60,7 @@ function PhotoPage({ myInitial }: Props) {
   const [lightboxUrls, setLightboxUrls] = useState<string[] | null>(null)
   const [lightboxIdx, setLightboxIdx] = useState(0)
 
-  const [concourseOrder, setConcourseOrder] = useState<string[]>(CONCOURSE_ORDER_DEFAULT)
+  const [concourseOrder, setConcourseOrder] = useState<string[]>([])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [cols, setCols] = useState<ColDef[]>(DEFAULT_COLS)
 
@@ -66,7 +70,16 @@ function PhotoPage({ myInitial }: Props) {
     fetch(PHOTO_API_URL + '/photo-dashboard?' + params.toString())
       .then((res) => res.json())
       .then((data) => {
-        setRows(Array.isArray(data) ? data : [])
+        const list: PhotoRow[] = Array.isArray(data) ? data : []
+        setRows(list)
+        setConcourseOrder((prev) => {
+          const seen = [...new Set(list.map((r) => r.concourse))].sort()
+          const merged = [...prev]
+          seen.forEach((c) => {
+            if (!merged.includes(c)) merged.push(c)
+          })
+          return merged
+        })
         setInitialLoading(false)
       })
       .catch(() => {
@@ -162,7 +175,7 @@ function PhotoPage({ myInitial }: Props) {
                   }}
                   onClick={() => setCollapsed((prev) => ({ ...prev, [concourse]: !prev[concourse] }))}
                   style={{
-                    background: CONCOURSE_COLORS[concourse],
+                    background: getConcourseColor(concourse),
                     padding: '8px 14px',
                     fontWeight: 700,
                     color: '#33403a',
@@ -205,9 +218,17 @@ function PhotoPage({ myInitial }: Props) {
                             e.preventDefault()
                             onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
                           }}
-                          style={{ borderRight: '1px solid #c3c9d1', cursor: 'grab', userSelect: 'none', minWidth: 0, color: '#000' }}
+                          style={{ borderRight: '1px solid #c3c9d1', cursor: 'grab', userSelect: 'none', minWidth: 0, color: '#000', textAlign: 'center' }}
                         >
-                          <FitText text={c.label} />
+                          {c.label.includes('\n') ? (
+                            <div style={{ lineHeight: 1.25 }}>
+                              {c.label.split('\n').map((line) => (
+                                <div key={line}>{line}</div>
+                              ))}
+                            </div>
+                          ) : (
+                            <FitText text={c.label} />
+                          )}
                         </div>
                       ))}
                     </div>
