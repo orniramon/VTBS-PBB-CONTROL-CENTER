@@ -28,7 +28,7 @@ const CONCOURSE_COLORS: Record<string, string> = {
   E: '#eff5e2',
   F: '#f1ecf8',
   G: '#e2f5f4',
-  S: '#f3e0f7',
+  S: '#ffe9a3',
 }
 function getConcourseColor(concourse: string) {
   if (CONCOURSE_COLORS[concourse]) return CONCOURSE_COLORS[concourse]
@@ -541,6 +541,7 @@ function SubmitPhotoModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          checkinId: row.checkinId,
           flightNo: row.flightNo,
           stand: row.stand,
           position: row.position,

@@ -300,6 +300,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
                           top: 0,
                           fontWeight: 700,
                           color: '#000',
+                          zIndex: 1,
                         }}
                       >
                         {cols.map((c) => (
