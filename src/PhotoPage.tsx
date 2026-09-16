@@ -3,6 +3,7 @@ import FitText from './FitText'
 import { getServiceTypeColor } from './serviceTypeColors'
 
 const PHOTO_API_URL = 'https://photo-api.or-niramon.workers.dev'
+const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
 const HOURS_WINDOW = 10
 
 type PhotoRow = {
@@ -96,6 +97,21 @@ function PhotoPage({ myInitial, role }: Props) {
   useEffect(() => {
     load()
     const timer = setInterval(load, 10000)
+    // ดึงรายชื่อ Concourse ทั้งหมดที่มีจริงในระบบ (ไม่ใช่แค่ที่มีข้อมูลตอนนี้)
+    // เพื่อให้กล่อง Concourse ขึ้นครบเสมอ แม้ตอนนั้นจะยังไม่มีไฟลท์เลยก็ตาม
+    fetch(CHECKIN_API_URL + '/stands')
+      .then((res) => res.json())
+      .then((data) => {
+        const allConcourses = [...new Set((data || []).map((s: { concourse: string }) => s.concourse))].sort()
+        setConcourseOrder((prev) => {
+          const merged = [...prev]
+          allConcourses.forEach((c) => {
+            if (!merged.includes(c)) merged.push(c)
+          })
+          return merged
+        })
+      })
+      .catch(() => {})
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
