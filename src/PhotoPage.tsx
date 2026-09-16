@@ -101,8 +101,8 @@ function PhotoPage({ myInitial, role }: Props) {
     // เพื่อให้กล่อง Concourse ขึ้นครบเสมอ แม้ตอนนั้นจะยังไม่มีไฟลท์เลยก็ตาม
     fetch(CHECKIN_API_URL + '/stands')
       .then((res) => res.json())
-      .then((data) => {
-        const allConcourses = [...new Set((data || []).map((s: { concourse: string }) => s.concourse))].sort()
+      .then((data: { stand: string; concourse: string }[]) => {
+        const allConcourses = Array.from(new Set((data || []).map((s) => s.concourse))).sort()
         setConcourseOrder((prev) => {
           const merged = [...prev]
           allConcourses.forEach((c) => {
