@@ -23,6 +23,9 @@ type PhotoRow = {
   photoUrls: string[]
 }
 
+const SERVICE_TYPES = ['ARR', 'DEP', 'TOWING IN', 'TOWING OUT']
+const PHOTO_REQUIRED_TYPES = ['ARR', 'TOWING IN'] // DEP/TOWING OUT ยังไม่บังคับแนบรูป
+
 const CONCOURSE_COLORS: Record<string, string> = {
   A: '#e6f5ec',
   B: '#fcedd9',
@@ -62,13 +65,16 @@ function PhotoPage({ myInitial, role }: Props) {
   const [rows, setRows] = useState<PhotoRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState('')
+  const [allConcourses, setAllConcourses] = useState<string[]>([])
+
+  const [selectedType, setSelectedType] = useState<string | null>(null)
+  const [selectedConcourse, setSelectedConcourse] = useState<string | null>(null)
+
   const [modalTarget, setModalTarget] = useState<PhotoRow | null>(null)
   const [lightboxUrls, setLightboxUrls] = useState<string[] | null>(null)
   const [lightboxIdx, setLightboxIdx] = useState(0)
   const [showSearchModal, setShowSearchModal] = useState(false)
 
-  const [concourseOrder, setConcourseOrder] = useState<string[]>([])
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [cols, setCols] = useState<ColDef[]>(DEFAULT_COLS)
 
   function load() {
@@ -76,16 +82,7 @@ function PhotoPage({ myInitial, role }: Props) {
     fetch(PHOTO_API_URL + '/photo-dashboard?' + params.toString())
       .then((res) => res.json())
       .then((data) => {
-        const list: PhotoRow[] = Array.isArray(data) ? data : []
-        setRows(list)
-        setConcourseOrder((prev) => {
-          const seen = [...new Set(list.map((r) => r.concourse))].sort()
-          const merged = [...prev]
-          seen.forEach((c) => {
-            if (!merged.includes(c)) merged.push(c)
-          })
-          return merged
-        })
+        setRows(Array.isArray(data) ? data : [])
         setInitialLoading(false)
       })
       .catch(() => {
@@ -97,31 +94,16 @@ function PhotoPage({ myInitial, role }: Props) {
   useEffect(() => {
     load()
     const timer = setInterval(load, 10000)
-    // ดึงรายชื่อ Concourse ทั้งหมดที่มีจริงในระบบ (ไม่ใช่แค่ที่มีข้อมูลตอนนี้)
-    // เพื่อให้กล่อง Concourse ขึ้นครบเสมอ แม้ตอนนั้นจะยังไม่มีไฟลท์เลยก็ตาม
     fetch(CHECKIN_API_URL + '/stands')
       .then((res) => res.json())
       .then((data: { stand: string; concourse: string }[]) => {
-        const allConcourses = Array.from(new Set((data || []).map((s) => s.concourse))).sort()
-        setConcourseOrder((prev) => {
-          const merged = [...prev]
-          allConcourses.forEach((c) => {
-            if (!merged.includes(c)) merged.push(c)
-          })
-          return merged
-        })
+        setAllConcourses(Array.from(new Set((data || []).map((s) => s.concourse))).sort())
       })
       .catch(() => {})
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function onConcourseDrop(from: string, to: string) {
-    const arr = [...concourseOrder]
-    arr.splice(arr.indexOf(from), 1)
-    arr.splice(arr.indexOf(to), 0, from)
-    setConcourseOrder(arr)
-  }
   function onColDrop(from: ColKey, to: ColKey) {
     const arr = [...cols]
     const fromIdx = arr.findIndex((c) => c.key === from)
@@ -142,24 +124,22 @@ function PhotoPage({ myInitial, role }: Props) {
 
   const gridTemplate = cols.map((c) => `minmax(0, ${c.width}fr)`).join(' ')
 
-  // จัดกลุ่ม: concourse -> เที่ยวบิน (checkinId) -> ตำแหน่ง (เรียง L1,L2,L3)
-  const byConcourse: Record<string, FlightGroup[]> = {}
-  rows.forEach((r) => {
-    byConcourse[r.concourse] = byConcourse[r.concourse] || []
-    let grp = byConcourse[r.concourse].find((g) => g.checkinId === r.checkinId)
-    if (!grp) {
-      grp = { checkinId: r.checkinId, positions: [] }
-      byConcourse[r.concourse].push(grp)
+  const filteredRows = rows.filter((r) => r.serviceType === selectedType && r.concourse === selectedConcourse)
+  const groups: FlightGroup[] = []
+  filteredRows.forEach((r) => {
+    let g = groups.find((x) => x.checkinId === r.checkinId)
+    if (!g) {
+      g = { checkinId: r.checkinId, positions: [] }
+      groups.push(g)
     }
-    grp.positions.push(r)
+    g.positions.push(r)
   })
-  Object.values(byConcourse).forEach((groups) => {
-    groups.forEach((g) => g.positions.sort((a, b) => a.position.localeCompare(b.position)))
-    groups.sort((a, b) => (a.positions[0].createdAt < b.positions[0].createdAt ? 1 : -1))
-  })
+  groups.forEach((g) => g.positions.sort((a, b) => a.position.localeCompare(b.position)))
+  groups.sort((a, b) => (a.positions[0].createdAt < b.positions[0].createdAt ? 1 : -1))
+  const totalPositionRows = groups.reduce((s, g) => s + g.positions.length, 0)
 
   return (
-    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: 1400, margin: '0 auto' }}>
+    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: 900, margin: '0 auto' }}>
       <style>{`
         .photo-cell { font-size: 12px; padding: 6px 4px; }
         .photo-header-cell { font-size: 11px; padding: 6px 4px; }
@@ -167,147 +147,150 @@ function PhotoPage({ myInitial, role }: Props) {
           .photo-cell { font-size: 10px; padding: 4px 2px; }
           .photo-header-cell { font-size: 9.5px; padding: 4px 2px; }
         }
-        .photo-grid { display: flex; flex-direction: column; gap: 16px; }
-        @media (min-width: 900px) {
-          .photo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        }
       `}</style>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        {SEARCH_ALLOWED_ROLES.includes(role) && (
+      {SEARCH_ALLOWED_ROLES.includes(role) && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
           <button
             onClick={() => setShowSearchModal(true)}
             style={{ padding: '10px 20px', border: 'none', borderRadius: 20, fontSize: 14, fontWeight: 600, cursor: 'pointer', background: '#1a73e8', color: '#fff' }}
           >
             ค้นหา
           </button>
-        )}
+        </div>
+      )}
+
+      <label style={sectionLabelStyle}>Service Type</label>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+        {SERVICE_TYPES.map((t) => (
+          <button
+            key={t}
+            onClick={() => {
+              setSelectedType(t)
+              setSelectedConcourse(null)
+            }}
+            style={{
+              ...toggleStyle,
+              background: selectedType === t ? '#1a73e8' : '#fff',
+              color: selectedType === t ? '#fff' : '#000',
+            }}
+          >
+            {t}
+          </button>
+        ))}
       </div>
+
+      {selectedType && (
+        <>
+          <label style={sectionLabelStyle}>Concourse</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {allConcourses.map((c) => (
+              <button
+                key={c}
+                onClick={() => setSelectedConcourse(c)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 20,
+                  border: selectedConcourse === c ? '2px solid #1a73e8' : '1px solid #ccc',
+                  background: getConcourseColor(c),
+                  color: '#33403a',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {initialLoading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
       {error && <div style={{ textAlign: 'center', color: '#c5221f', padding: 12 }}>{error}</div>}
 
-      {!initialLoading && (
-        <div className="photo-grid">
-          {concourseOrder.map((concourse) => {
-            const groups = byConcourse[concourse] || []
-            const isCollapsed = collapsed[concourse]
-            const totalPositionRows = groups.reduce((s, g) => s + g.positions.length, 0)
-
-            return (
-              <div key={concourse} style={{ minWidth: 0 }}>
+      {!initialLoading && selectedType && selectedConcourse && (
+        <div style={{ background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ background: getConcourseColor(selectedConcourse), padding: '8px 14px', fontWeight: 700, color: '#33403a' }}>
+            {selectedType} — Concourse {selectedConcourse}
+          </div>
+          <div style={{ maxHeight: 420, overflow: 'auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gridAutoRows: 'min-content' }}>
+              {cols.map((c) => (
                 <div
+                  key={c.key}
+                  className="photo-header-cell"
                   draggable
-                  onDragStart={(e) => e.dataTransfer.setData('text/plain', concourse)}
+                  onDragStart={(e) => e.dataTransfer.setData('text/plain', c.key)}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault()
-                    onConcourseDrop(e.dataTransfer.getData('text/plain'), concourse)
+                    onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
                   }}
-                  onClick={() => setCollapsed((prev) => ({ ...prev, [concourse]: !prev[concourse] }))}
                   style={{
-                    background: getConcourseColor(concourse),
-                    padding: '8px 14px',
+                    gridRow: 1,
+                    background: '#d8dde3',
+                    position: 'sticky',
+                    top: 0,
                     fontWeight: 700,
-                    color: '#33403a',
-                    borderRadius: '10px 10px 0 0',
+                    borderRight: '1px solid #c3c9d1',
                     cursor: 'grab',
                     userSelect: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
+                    minWidth: 0,
+                    color: '#000',
+                    textAlign: 'center',
+                    zIndex: 1,
                   }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}>
-                    <path d="M6 9l6 6 6-6" stroke="#33403a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  Concourse {concourse}
-                </div>
-
-                {!isCollapsed && (
-                  <div style={{ background: '#fff', borderRadius: '0 0 10px 10px', maxHeight: 380, overflow: 'auto' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gridAutoRows: 'min-content' }}>
-                      {/* ---------- หัวตาราง ---------- */}
-                      {cols.map((c) => (
-                        <div
-                          key={c.key}
-                          className="photo-header-cell"
-                          draggable
-                          onDragStart={(e) => e.dataTransfer.setData('text/plain', c.key)}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault()
-                            onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
-                          }}
-                          style={{
-                            gridRow: 1,
-                            background: '#d8dde3',
-                            position: 'sticky',
-                            top: 0,
-                            fontWeight: 700,
-                            borderRight: '1px solid #c3c9d1',
-                            cursor: 'grab',
-                            userSelect: 'none',
-                            minWidth: 0,
-                            color: '#000',
-                            textAlign: 'center',
-                            zIndex: 1,
-                          }}
-                        >
-                          {c.label.includes('\n') ? (
-                            <div style={{ lineHeight: 1.25 }}>
-                              {c.label.split('\n').map((line) => (
-                                <div key={line}>{line}</div>
-                              ))}
-                            </div>
-                          ) : (
-                            <FitText text={c.label} />
-                          )}
-                        </div>
+                  {c.label.includes('\n') ? (
+                    <div style={{ lineHeight: 1.25 }}>
+                      {c.label.split('\n').map((line) => (
+                        <div key={line}>{line}</div>
                       ))}
-
-                      {/* ---------- แถวข้อมูล ---------- */}
-                      {totalPositionRows === 0 ? (
-                        <div style={{ gridRow: 2, gridColumn: `1 / span ${cols.length}`, padding: 16, color: '#999', fontSize: 14, textAlign: 'center' }}>
-                          ไม่มีข้อมูลไฟลท์ในช่วงเวลานี้
-                        </div>
-                      ) : (
-                        (() => {
-                          let cursor = 2 // แถวที่ 1 คือหัวตาราง
-                          const bg = (groupIdx: number) => (groupIdx % 2 === 0 ? '#ffffff' : '#f0f3f8')
-                          return groups.map((g, groupIdx) => {
-                            const startRow = cursor
-                            const span = g.positions.length
-                            const first = g.positions[0]
-                            cursor += span
-
-                            return (
-                              <FlightGroupCells
-                                key={g.checkinId}
-                                group={g}
-                                first={first}
-                                startRow={startRow}
-                                span={span}
-                                cols={cols}
-                                background={bg(groupIdx)}
-                                fmtDate={fmtDate}
-                                fmtTime={fmtTime}
-                                onOpenSubmit={setModalTarget}
-                                onOpenLightbox={(urls) => {
-                                  setLightboxUrls(urls)
-                                  setLightboxIdx(0)
-                                }}
-                              />
-                            )
-                          })
-                        })()
-                      )}
                     </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+                  ) : (
+                    <FitText text={c.label} />
+                  )}
+                </div>
+              ))}
+
+              {totalPositionRows === 0 ? (
+                <div style={{ gridRow: 2, gridColumn: `1 / span ${cols.length}`, padding: 16, color: '#999', fontSize: 14, textAlign: 'center' }}>
+                  ไม่มีข้อมูลไฟลท์ในช่วงเวลานี้
+                </div>
+              ) : (
+                (() => {
+                  let cursor = 2
+                  return groups.map((g, groupIdx) => {
+                    const startRow = cursor
+                    const span = g.positions.length
+                    const first = g.positions[0]
+                    cursor += span
+                    const bg = groupIdx % 2 === 0 ? '#ffffff' : '#f0f3f8'
+
+                    return (
+                      <FlightGroupCells
+                        key={g.checkinId}
+                        group={g}
+                        first={first}
+                        startRow={startRow}
+                        span={span}
+                        cols={cols}
+                        background={bg}
+                        fmtDate={fmtDate}
+                        fmtTime={fmtTime}
+                        onOpenSubmit={setModalTarget}
+                        onOpenLightbox={(urls) => {
+                          setLightboxUrls(urls)
+                          setLightboxIdx(0)
+                        }}
+                      />
+                    )
+                  })
+                })()
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -368,10 +351,6 @@ function PhotoPage({ myInitial, role }: Props) {
   )
 }
 
-// =====================================================================
-// เซลล์ของ 1 กลุ่มไฟลท์ (อาจมีหลายตำแหน่ง L1/L2/L3) — คอลัมน์ที่ใช้ร่วมกัน
-// (วันที่-เวลา/หลุมจอด/Flight No.) จะ span ข้ามหลายแถวเป็นเซลล์เดียว
-// =====================================================================
 function FlightGroupCells({
   group,
   first,
@@ -436,7 +415,6 @@ function FlightGroupCells({
             </div>
           )
         }
-        // คอลัมน์ที่เหลือ (pbb/bridge/avdgs/status) แยกเป็นแถวย่อยตามตำแหน่ง
         return (
           <div key={c.key} style={{ display: 'contents' }}>
             {group.positions.map((r, i) => (
@@ -492,43 +470,6 @@ function FlightGroupCells({
   )
 }
 
-// =====================================================================
-// ป๊อบอัพส่งรูป
-// =====================================================================
-function compressImageFile(file: File, maxDim: number, quality: number): Promise<{ base64: string; mimeType: string; fileName: string }> {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let w = img.width
-        let h = img.height
-        if (w > maxDim || h > maxDim) {
-          if (w > h) {
-            h = Math.round((h * maxDim) / w)
-            w = maxDim
-          } else {
-            w = Math.round((w * maxDim) / h)
-            h = maxDim
-          }
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
-        const dataUrl = canvas.toDataURL('image/jpeg', quality)
-        resolve({ base64: dataUrl.split(',')[1], mimeType: 'image/jpeg', fileName: file.name.replace(/\.[^.]+$/, '') + '.jpg' })
-      }
-      img.src = e.target!.result as string
-    }
-    reader.readAsDataURL(file)
-  })
-}
-
-// =====================================================================
-// ป๊อบอัพค้นหาข้อมูลย้อนหลัง — ต้องระบุช่วงวันที่+เวลาเสมอ (Flight No./
-// หลุมจอด เป็นตัวกรองเสริม ไม่บังคับ)
-// =====================================================================
 function SearchModal({
   onClose,
   onOpenSubmit,
@@ -728,8 +669,35 @@ function SearchModal({
   )
 }
 
-const detailTh = { padding: '6px 4px', textAlign: 'center' as const, color: '#666', fontWeight: 600, fontSize: 11 }
-const detailTd = { padding: '6px 4px', textAlign: 'center' as const, color: '#000' }
+function compressImageFile(file: File, maxDim: number, quality: number): Promise<{ base64: string; mimeType: string; fileName: string }> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width
+        let h = img.height
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w)
+            w = maxDim
+          } else {
+            w = Math.round((w * maxDim) / h)
+            h = maxDim
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        const dataUrl = canvas.toDataURL('image/jpeg', quality)
+        resolve({ base64: dataUrl.split(',')[1], mimeType: 'image/jpeg', fileName: file.name.replace(/\.[^.]+$/, '') + '.jpg' })
+      }
+      img.src = e.target!.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
 
 function SubmitPhotoModal({
   row,
@@ -742,11 +710,17 @@ function SubmitPhotoModal({
   onClose: () => void
   onDone: () => void
 }) {
-  const showAvdgs = row.position === 'L1' && row.serviceType === 'ARR'
+  const isL1 = row.position === 'L1'
+  const isDockType = row.serviceType === 'ARR' || row.serviceType === 'TOWING IN'
+  const showAvdgs = isL1 && row.serviceType === 'ARR'
+  const photoRequired = PHOTO_REQUIRED_TYPES.includes(row.serviceType)
+
   const [bridgeStatus, setBridgeStatus] = useState('')
   const [bridgeReason, setBridgeReason] = useState('')
   const [avdgsStatus, setAvdgsStatus] = useState('')
   const [avdgsReason, setAvdgsReason] = useState('')
+  const [aircraftReg, setAircraftReg] = useState('')
+  const [eventTime, setEventTime] = useState('')
   const [files, setFiles] = useState<FileList | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -764,16 +738,23 @@ function SubmitPhotoModal({
 
   const color = getServiceTypeColor(row.serviceType)
 
+  function toBangkokIsoToday(timeStr: string) {
+    const todayStr = new Date().toLocaleDateString('en-CA')
+    return `${todayStr}T${timeStr}:00+07:00`
+  }
+
   async function handleSubmit() {
     setError('')
     if (!bridgeStatus) return setError('กรุณาเลือกการทำงานของ PBB')
     if (showAvdgs && !avdgsStatus) return setError('กรุณาเลือกการทำงานของ A-VDGS')
-    if (!files || files.length === 0) return setError('กรุณาแนบรูปอย่างน้อย 1 รูป')
-    if (files.length > 10) return setError('แนบรูปได้สูงสุด 10 รูป')
+    if (isL1 && !aircraftReg) return setError('กรุณากรอก A/C Reg.')
+    if (isL1 && !eventTime) return setError(isDockType ? 'กรุณากรอกเวลาเทียบ' : 'กรุณากรอกเวลาถอย')
+    if (photoRequired && (!files || files.length === 0)) return setError('กรุณาแนบรูปอย่างน้อย 1 รูป')
+    if (files && files.length > 10) return setError('แนบรูปได้สูงสุด 10 รูป')
 
     setSubmitting(true)
     try {
-      const photos = await Promise.all(Array.from(files).map((f) => compressImageFile(f, 800, 0.5)))
+      const photos = files && files.length > 0 ? await Promise.all(Array.from(files).map((f) => compressImageFile(f, 800, 0.5))) : []
       const res = await fetch(PHOTO_API_URL + '/submit-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -782,10 +763,13 @@ function SubmitPhotoModal({
           flightNo: row.flightNo,
           stand: row.stand,
           position: row.position,
+          serviceType: row.serviceType,
           bridgeStatus: bridgeReason ? `${bridgeStatus} (${bridgeReason})` : bridgeStatus,
           avdgsStatus: showAvdgs ? (avdgsReason ? `${avdgsStatus} (${avdgsReason})` : avdgsStatus) : null,
           submittedByInitial: myInitial,
           photos,
+          aircraftReg: isL1 ? aircraftReg : null,
+          eventTime: isL1 && eventTime ? toBangkokIsoToday(eventTime) : null,
         }),
       })
       const data = await res.json()
@@ -813,6 +797,21 @@ function SubmitPhotoModal({
         </div>
         <div style={{ textAlign: 'center', fontSize: 14, color: '#333', marginBottom: 4 }}>หลุมจอด {row.stand}</div>
         <div style={{ textAlign: 'center', fontSize: 14, color: '#333', marginBottom: 16 }}>{row.position}</div>
+
+        {isL1 && (
+          <>
+            <label style={labelStyle}>A/C Reg. *</label>
+            <input
+              type="text"
+              value={aircraftReg}
+              onChange={(e) => setAircraftReg(e.target.value.toUpperCase().replace(/\s/g, ''))}
+              placeholder="เช่น HSABC"
+              style={inputStyle}
+            />
+            <label style={labelStyle}>{isDockType ? 'เวลาเทียบ *' : 'เวลาถอย *'}</label>
+            <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} style={dateTimeInputStyle} />
+          </>
+        )}
 
         <label style={labelStyle}>การทำงานของ PBB *</label>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -846,24 +845,33 @@ function SubmitPhotoModal({
           </>
         )}
 
-        <div style={{ background: '#fff7e0', border: '1px solid #f2c94c', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#7a5c00', margin: '12px 0', textAlign: 'left' }}>
-          <b>ควรถ่ายรูปครบตามนี้:</b>
-          <ol style={{ margin: '4px 0 0', paddingLeft: 18, textAlign: 'left' }}>
-            {checklist.map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-          </ol>
-        </div>
+        {photoRequired && (
+          <div style={{ background: '#fff7e0', border: '1px solid #f2c94c', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#7a5c00', margin: '12px 0', textAlign: 'left' }}>
+            <b>ควรถ่ายรูปครบตามนี้:</b>
+            <ol style={{ margin: '4px 0 0', paddingLeft: 18, textAlign: 'left' }}>
+              {checklist.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ol>
+          </div>
+        )}
 
-        <label style={labelStyle}>แนบภาพถ่าย (สูงสุด 10 รูป) *</label>
-        <input type="file" accept="image/*" multiple onChange={(e) => setFiles(e.target.files)} style={inputStyle} />
+        <label style={labelStyle}>แนบภาพถ่าย {photoRequired ? '(สูงสุด 10 รูป) *' : '(ยังไม่เปิดใช้งานสำหรับประเภทนี้)'}</label>
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          disabled={!photoRequired}
+          onChange={(e) => setFiles(e.target.files)}
+          style={photoRequired ? inputStyle : { ...inputStyle, opacity: 0.4, pointerEvents: 'none', background: '#eee' }}
+        />
 
         <div style={{ background: '#fce8e6', border: '1px solid #c5221f', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#c5221f', margin: '12px 0', fontWeight: 600, textAlign: 'left' }}>
           ⚠️ กรุณาตรวจสอบข้อมูลให้ถูกต้อง กดส่งแล้วไม่สามารถแก้ไขข้อมูลได้
         </div>
 
         <button onClick={handleSubmit} disabled={submitting} style={{ ...buttonStyle, background: '#34a853', color: '#fff', width: '100%' }}>
-          {submitting ? 'กำลังอัปโหลด...' : 'ยืนยันส่งรูป'}
+          {submitting ? 'กำลังบันทึก...' : 'ยืนยันส่งข้อมูล'}
         </button>
         {error && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{error}</div>}
       </div>
@@ -871,6 +879,7 @@ function SubmitPhotoModal({
   )
 }
 
+const sectionLabelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '0 0 8px', color: '#000' }
 const labelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '14px 0 6px', color: '#000', textAlign: 'left' as const }
 const inputStyle = { width: '100%', padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' as const, background: '#fff', color: '#000' }
 const dateTimeInputStyle = { ...inputStyle, width: 'auto', maxWidth: '100%', display: 'block' as const }
@@ -897,5 +906,7 @@ const modalBoxStyle = {
   position: 'relative' as const,
 }
 const closeBtnStyle = { position: 'absolute' as const, top: 14, right: 16, background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#666' }
+const detailTh = { padding: '6px 4px', textAlign: 'center' as const, color: '#666', fontWeight: 600, fontSize: 11 }
+const detailTd = { padding: '6px 4px', textAlign: 'center' as const, color: '#000' }
 
 export default PhotoPage
