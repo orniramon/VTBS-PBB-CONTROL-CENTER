@@ -189,14 +189,14 @@ function PhotoPage({ myInitial, role }: Props) {
                 key={c}
                 onClick={() => setSelectedConcourse(c)}
                 style={{
-                  padding: '8px 16px',
-                  borderRadius: 20,
-                  border: selectedConcourse === c ? '2px solid #1a73e8' : '1px solid #ccc',
+                  padding: '14px 24px',
+                  borderRadius: 24,
+                  border: selectedConcourse === c ? '3px solid #1a73e8' : '1px solid #ccc',
                   background: getConcourseColor(c),
                   color: '#33403a',
                   fontWeight: 700,
                   cursor: 'pointer',
-                  fontSize: 13,
+                  fontSize: 18,
                 }}
               >
                 {c}
@@ -748,7 +748,7 @@ function SubmitPhotoModal({
     if (!bridgeStatus) return setError('กรุณาเลือกการทำงานของ PBB')
     if (showAvdgs && !avdgsStatus) return setError('กรุณาเลือกการทำงานของ A-VDGS')
     if (isL1 && !aircraftReg) return setError('กรุณากรอก A/C Reg.')
-    if (isL1 && !eventTime) return setError(isDockType ? 'กรุณากรอกเวลาเทียบ' : 'กรุณากรอกเวลาถอย')
+    if (!eventTime) return setError(isDockType ? 'กรุณากรอกเวลาเทียบ' : 'กรุณากรอกเวลาถอย')
     if (photoRequired && (!files || files.length === 0)) return setError('กรุณาแนบรูปอย่างน้อย 1 รูป')
     if (files && files.length > 10) return setError('แนบรูปได้สูงสุด 10 รูป')
 
@@ -769,7 +769,7 @@ function SubmitPhotoModal({
           submittedByInitial: myInitial,
           photos,
           aircraftReg: isL1 ? aircraftReg : null,
-          eventTime: isL1 && eventTime ? toBangkokIsoToday(eventTime) : null,
+          eventTime: eventTime ? toBangkokIsoToday(eventTime) : null,
         }),
       })
       const data = await res.json()
@@ -808,10 +808,10 @@ function SubmitPhotoModal({
               placeholder="เช่น HSABC"
               style={inputStyle}
             />
-            <label style={labelStyle}>{isDockType ? 'เวลาเทียบ *' : 'เวลาถอย *'}</label>
-            <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} style={dateTimeInputStyle} />
           </>
         )}
+        <label style={labelStyle}>{isDockType ? 'เวลาเทียบ *' : 'เวลาถอย *'}</label>
+        <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} style={dateTimeInputStyle} />
 
         <label style={labelStyle}>การทำงานของ PBB *</label>
         <div style={{ display: 'flex', gap: 8 }}>

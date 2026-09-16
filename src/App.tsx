@@ -6,6 +6,7 @@ import type { TabName } from './MainLayout'
 import CheckinPage from './CheckinPage'
 import CheckinRecordPage from './CheckinRecordPage'
 import PhotoPage from './PhotoPage'
+import EsummaryPage from './EsummaryPage'
 
 // TODO: เปลี่ยนเป็น URL ของ Cloudflare Worker "login" ที่ deploy ไว้จริง
 const WORKER_LOGIN_URL = 'https://login.or-niramon.workers.dev'
@@ -93,6 +94,7 @@ function App() {
         {activeTab === 'PBB Operator' && (
           <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
         )}
+        {activeTab === 'e-Summary' && <EsummaryPage />}
       </MainLayout>
     )
   }
