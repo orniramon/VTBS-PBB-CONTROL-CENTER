@@ -161,7 +161,7 @@ function EsummaryPage() {
   })
 
   return (
-    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: '100%' }}>
       <label style={sectionLabelStyle}>Concourse</label>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
         {allConcourses.map((c) => (

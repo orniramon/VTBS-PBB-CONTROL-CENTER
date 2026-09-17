@@ -124,22 +124,8 @@ function PhotoPage({ myInitial, role }: Props) {
 
   const gridTemplate = cols.map((c) => `minmax(0, ${c.width}fr)`).join(' ')
 
-  const filteredRows = rows.filter((r) => r.serviceType === selectedType && r.concourse === selectedConcourse)
-  const groups: FlightGroup[] = []
-  filteredRows.forEach((r) => {
-    let g = groups.find((x) => x.checkinId === r.checkinId)
-    if (!g) {
-      g = { checkinId: r.checkinId, positions: [] }
-      groups.push(g)
-    }
-    g.positions.push(r)
-  })
-  groups.forEach((g) => g.positions.sort((a, b) => a.position.localeCompare(b.position)))
-  groups.sort((a, b) => (a.positions[0].createdAt < b.positions[0].createdAt ? 1 : -1))
-  const totalPositionRows = groups.reduce((s, g) => s + g.positions.length, 0)
-
   return (
-    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: '100%' }}>
       <style>{`
         .photo-cell { font-size: 12px; padding: 6px 4px; }
         .photo-header-cell { font-size: 11px; padding: 6px 4px; }
@@ -183,116 +169,136 @@ function PhotoPage({ myInitial, role }: Props) {
       {selectedType && (
         <>
           <label style={sectionLabelStyle}>Concourse</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-            {allConcourses.map((c) => (
-              <button
-                key={c}
-                onClick={() => setSelectedConcourse(c)}
-                style={{
-                  padding: '14px 24px',
-                  borderRadius: 24,
-                  border: selectedConcourse === c ? '3px solid #1a73e8' : '1px solid #ccc',
-                  background: getConcourseColor(c),
-                  color: '#33403a',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontSize: 18,
-                }}
-              >
-                {c}
-              </button>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {allConcourses.map((c) => {
+              const isOpen = selectedConcourse === c
+              const concourseFilteredRows = rows.filter((r) => r.serviceType === selectedType && r.concourse === c)
+              const concourseGroups: FlightGroup[] = []
+              concourseFilteredRows.forEach((r) => {
+                let g = concourseGroups.find((x) => x.checkinId === r.checkinId)
+                if (!g) {
+                  g = { checkinId: r.checkinId, positions: [] }
+                  concourseGroups.push(g)
+                }
+                g.positions.push(r)
+              })
+              concourseGroups.forEach((g) => g.positions.sort((a, b) => a.position.localeCompare(b.position)))
+              concourseGroups.sort((a, b) => (a.positions[0].createdAt < b.positions[0].createdAt ? 1 : -1))
+              const concourseTotalRows = concourseGroups.reduce((s, g) => s + g.positions.length, 0)
+
+              return (
+                <div key={c}>
+                  <button
+                    onClick={() => setSelectedConcourse(isOpen ? null : c)}
+                    style={{
+                      width: '100%',
+                      padding: '14px 20px',
+                      borderRadius: isOpen ? '12px 12px 0 0' : 12,
+                      border: isOpen ? '3px solid #1a73e8' : '1px solid #ccc',
+                      background: getConcourseColor(c),
+                      color: '#33403a',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontSize: 18,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span>Concourse {c}</span>
+                    <span>{isOpen ? '▲' : '▼'}</span>
+                  </button>
+
+                  {isOpen && !initialLoading && (
+                    <div style={{ background: '#fff', borderRadius: '0 0 10px 10px', border: '1px solid #eee', borderTop: 'none', overflow: 'hidden' }}>
+                      <div style={{ maxHeight: 420, overflow: 'auto' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gridAutoRows: 'min-content' }}>
+                          {cols.map((col) => (
+                            <div
+                              key={col.key}
+                              className="photo-header-cell"
+                              draggable
+                              onDragStart={(e) => e.dataTransfer.setData('text/plain', col.key)}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                onColDrop(e.dataTransfer.getData('text/plain') as ColKey, col.key)
+                              }}
+                              style={{
+                                gridRow: 1,
+                                background: '#d8dde3',
+                                position: 'sticky',
+                                top: 0,
+                                fontWeight: 700,
+                                borderRight: '1px solid #c3c9d1',
+                                cursor: 'grab',
+                                userSelect: 'none',
+                                minWidth: 0,
+                                color: '#000',
+                                textAlign: 'center',
+                                zIndex: 1,
+                              }}
+                            >
+                              {col.label.includes('\n') ? (
+                                <div style={{ lineHeight: 1.25 }}>
+                                  {col.label.split('\n').map((line) => (
+                                    <div key={line}>{line}</div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <FitText text={col.label} />
+                              )}
+                            </div>
+                          ))}
+
+                          {concourseTotalRows === 0 ? (
+                            <div style={{ gridRow: 2, gridColumn: `1 / span ${cols.length}`, padding: 16, color: '#999', fontSize: 14, textAlign: 'center' }}>
+                              ไม่มีข้อมูลไฟลท์ในช่วงเวลานี้
+                            </div>
+                          ) : (
+                            (() => {
+                              let cursor = 2
+                              return concourseGroups.map((g, groupIdx) => {
+                                const startRow = cursor
+                                const span = g.positions.length
+                                const first = g.positions[0]
+                                cursor += span
+                                const bg = groupIdx % 2 === 0 ? '#ffffff' : '#f0f3f8'
+
+                                return (
+                                  <FlightGroupCells
+                                    key={g.checkinId}
+                                    group={g}
+                                    first={first}
+                                    startRow={startRow}
+                                    span={span}
+                                    cols={cols}
+                                    background={bg}
+                                    fmtDate={fmtDate}
+                                    fmtTime={fmtTime}
+                                    onOpenSubmit={setModalTarget}
+                                    onOpenLightbox={(urls) => {
+                                      setLightboxUrls(urls)
+                                      setLightboxIdx(0)
+                                    }}
+                                  />
+                                )
+                              })
+                            })()
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </>
       )}
 
       {initialLoading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
       {error && <div style={{ textAlign: 'center', color: '#c5221f', padding: 12 }}>{error}</div>}
-
-      {!initialLoading && selectedType && selectedConcourse && (
-        <div style={{ background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ background: getConcourseColor(selectedConcourse), padding: '8px 14px', fontWeight: 700, color: '#33403a' }}>
-            {selectedType} — Concourse {selectedConcourse}
-          </div>
-          <div style={{ maxHeight: 420, overflow: 'auto' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gridAutoRows: 'min-content' }}>
-              {cols.map((c) => (
-                <div
-                  key={c.key}
-                  className="photo-header-cell"
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData('text/plain', c.key)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    onColDrop(e.dataTransfer.getData('text/plain') as ColKey, c.key)
-                  }}
-                  style={{
-                    gridRow: 1,
-                    background: '#d8dde3',
-                    position: 'sticky',
-                    top: 0,
-                    fontWeight: 700,
-                    borderRight: '1px solid #c3c9d1',
-                    cursor: 'grab',
-                    userSelect: 'none',
-                    minWidth: 0,
-                    color: '#000',
-                    textAlign: 'center',
-                    zIndex: 1,
-                  }}
-                >
-                  {c.label.includes('\n') ? (
-                    <div style={{ lineHeight: 1.25 }}>
-                      {c.label.split('\n').map((line) => (
-                        <div key={line}>{line}</div>
-                      ))}
-                    </div>
-                  ) : (
-                    <FitText text={c.label} />
-                  )}
-                </div>
-              ))}
-
-              {totalPositionRows === 0 ? (
-                <div style={{ gridRow: 2, gridColumn: `1 / span ${cols.length}`, padding: 16, color: '#999', fontSize: 14, textAlign: 'center' }}>
-                  ไม่มีข้อมูลไฟลท์ในช่วงเวลานี้
-                </div>
-              ) : (
-                (() => {
-                  let cursor = 2
-                  return groups.map((g, groupIdx) => {
-                    const startRow = cursor
-                    const span = g.positions.length
-                    const first = g.positions[0]
-                    cursor += span
-                    const bg = groupIdx % 2 === 0 ? '#ffffff' : '#f0f3f8'
-
-                    return (
-                      <FlightGroupCells
-                        key={g.checkinId}
-                        group={g}
-                        first={first}
-                        startRow={startRow}
-                        span={span}
-                        cols={cols}
-                        background={bg}
-                        fmtDate={fmtDate}
-                        fmtTime={fmtTime}
-                        onOpenSubmit={setModalTarget}
-                        onOpenLightbox={(urls) => {
-                          setLightboxUrls(urls)
-                          setLightboxIdx(0)
-                        }}
-                      />
-                    )
-                  })
-                })()
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {showSearchModal && (
         <SearchModal
@@ -408,7 +414,7 @@ function FlightGroupCells({
             <div key={c.key} className="photo-cell" style={sharedCellStyle}>
               <div style={{ textAlign: 'center' }}>
                 <FitText text={first.flightNo} />
-                {first.serviceType !== 'ARR' && (
+                {(first.serviceType === 'TOWING IN' || first.serviceType === 'TOWING OUT') && (
                   <div style={{ fontSize: '0.6em', color: '#666' }}>({first.serviceType})</div>
                 )}
               </div>
@@ -558,10 +564,10 @@ function SearchModal({
         <label style={labelStyle}>เวลา *</label>
         <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)} style={dateTimeInputStyle} />
 
-        <label style={labelStyle}>Flight No. (ถ้ามี)</label>
+        <label style={labelStyle}>Flight No.</label>
         <input type="text" value={flightNo} onChange={(e) => setFlightNo(e.target.value.toUpperCase())} style={inputStyle} />
 
-        <label style={labelStyle}>หลุมจอด (ถ้ามี)</label>
+        <label style={labelStyle}>หลุมจอด</label>
         <input type="text" value={stand} onChange={(e) => setStand(e.target.value.toUpperCase())} style={inputStyle} />
 
         <button onClick={handleSearch} disabled={searching} style={{ ...buttonStyle, background: '#1a73e8', color: '#fff', width: '100%', marginTop: 14 }}>
@@ -595,7 +601,7 @@ function SearchModal({
                           <div style={{ color: '#666', fontSize: 12, textAlign: 'left' }}>{fmtDateTime(first.createdAt)}</div>
                           <div style={{ textAlign: 'left' }}>
                             <b>{first.stand}</b> — <b>{first.flightNo}</b>
-                            {first.serviceType !== 'ARR' && <span style={{ fontSize: 12, color: '#666' }}> ({first.serviceType})</span>}
+                            {(first.serviceType === 'TOWING IN' || first.serviceType === 'TOWING OUT') && <span style={{ fontSize: 12, color: '#666' }}> ({first.serviceType})</span>}
                           </div>
                         </div>
                         <span style={{ color: '#666', fontSize: 12 }}>{isOpen ? '▲' : '▼'}</span>
