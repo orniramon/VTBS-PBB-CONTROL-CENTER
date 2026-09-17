@@ -146,6 +146,7 @@ function PhotoPage({ myInitial, role }: Props) {
         </div>
       )}
 
+      <div style={{ maxWidth: 700, margin: '0 auto' }}>
       <label style={sectionLabelStyle}>Service Type</label>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         {SERVICE_TYPES.map((t) => (
@@ -234,6 +235,7 @@ function PhotoPage({ myInitial, role }: Props) {
                                 cursor: 'grab',
                                 userSelect: 'none',
                                 minWidth: 0,
+                                overflow: 'hidden',
                                 color: '#000',
                                 textAlign: 'center',
                                 zIndex: 1,
@@ -299,6 +301,7 @@ function PhotoPage({ myInitial, role }: Props) {
 
       {initialLoading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
       {error && <div style={{ textAlign: 'center', color: '#c5221f', padding: 12 }}>{error}</div>}
+      </div>
 
       {showSearchModal && (
         <SearchModal
@@ -387,6 +390,7 @@ function FlightGroupCells({
     borderRight: '1px solid #eee',
     borderBottom: '1px solid #ddd',
     minWidth: 0,
+    overflow: 'hidden' as const,
   }
 
   return (
@@ -434,6 +438,7 @@ function FlightGroupCells({
                   borderRight: '1px solid #eee',
                   borderBottom: '1px solid #eee',
                   minWidth: 0,
+                  overflow: 'hidden',
                 }}
               >
                 {c.key === 'pbb' ? (
@@ -720,6 +725,7 @@ function SubmitPhotoModal({
   const isDockType = row.serviceType === 'ARR' || row.serviceType === 'TOWING IN'
   const showAvdgs = isL1 && row.serviceType === 'ARR'
   const photoRequired = PHOTO_REQUIRED_TYPES.includes(row.serviceType)
+  const minPhotos = row.serviceType === 'ARR' ? 8 : row.serviceType === 'TOWING IN' ? 7 : 0
 
   const [bridgeStatus, setBridgeStatus] = useState('')
   const [bridgeReason, setBridgeReason] = useState('')
@@ -755,7 +761,9 @@ function SubmitPhotoModal({
     if (showAvdgs && !avdgsStatus) return setError('กรุณาเลือกการทำงานของ A-VDGS')
     if (isL1 && !aircraftReg) return setError('กรุณากรอก A/C Reg.')
     if (!eventTime) return setError(isDockType ? 'กรุณากรอกเวลาเทียบ' : 'กรุณากรอกเวลาถอย')
-    if (photoRequired && (!files || files.length === 0)) return setError('กรุณาแนบรูปอย่างน้อย 1 รูป')
+    if (photoRequired && (!files || files.length < minPhotos)) {
+      return setError(`กรุณาแนบรูปอย่างน้อย ${minPhotos} รูป`)
+    }
     if (files && files.length > 10) return setError('แนบรูปได้สูงสุด 10 รูป')
 
     setSubmitting(true)
@@ -862,7 +870,9 @@ function SubmitPhotoModal({
           </div>
         )}
 
-        <label style={labelStyle}>แนบภาพถ่าย {photoRequired ? '(สูงสุด 10 รูป) *' : '(ยังไม่เปิดใช้งานสำหรับประเภทนี้)'}</label>
+        <label style={labelStyle}>
+          แนบภาพถ่าย {photoRequired ? `(อย่างน้อย ${minPhotos} รูป สูงสุด 10 รูป) *` : '(ยังไม่เปิดใช้งานสำหรับประเภทนี้)'}
+        </label>
         <input
           type="file"
           accept="image/*"
