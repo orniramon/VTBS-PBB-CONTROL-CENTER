@@ -184,7 +184,7 @@ function CheckinRecordPage({ role, myInitial }: Props) {
       <style>{`
         @keyframes blinkRow { 0%,100% { background-color: transparent; } 50% { background-color: #90caf9; } }
         .rec-row-new { animation: blinkRow 0.6s 5; }
-        .rec-grid { display: flex; flex-direction: column; gap: 16px; max-width: 480px; margin: 0 auto; }
+        .rec-grid { display: flex; flex-direction: column; gap: 16px; max-width: 100%; margin: 0 auto; }
         @media (min-width: 900px) {
           .rec-grid { display: grid; grid-template-columns: 1fr 1fr; max-width: 100%; width: 100%; gap: 20px; }
         }

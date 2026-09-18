@@ -351,7 +351,7 @@ function EsummaryPage() {
           </table>
 
           <h3 style={{ color: '#000', marginTop: 24 }}>สรุปผลงาน PBB Operator</h3>
-          <table style={{ ...reportTableStyle, maxWidth: 400 }}>
+          <table style={reportTableStyle}>
             <thead>
               <tr>
                 <th style={th}>PBB Operator</th>
