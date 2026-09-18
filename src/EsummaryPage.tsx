@@ -27,7 +27,7 @@ type PendingRow = {
 const TIME_RANGES = ['08:00-17:00', '17:00-08:00']
 const SHIFT_NUMBERS = [1, 2, 3, 4]
 
-function EsummaryPage() {
+function EsummaryPage({ isActive }: { isActive: boolean }) {
   const [allConcourses, setAllConcourses] = useState<string[]>([])
   const [concourse, setConcourse] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -69,12 +69,12 @@ function EsummaryPage() {
   }
 
   useEffect(() => {
-    if (!reportReady) return
+    if (!reportReady || !isActive) return
     loadPending()
     const timer = setInterval(loadPending, 10000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportReady, concourse])
+  }, [reportReady, concourse, isActive])
 
   async function lookupSupervisor(initial: string) {
     setSupervisorInitial(initial)

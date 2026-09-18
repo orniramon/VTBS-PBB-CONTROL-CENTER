@@ -50,9 +50,10 @@ type Stand = { stand: string; concourse: string }
 type Props = {
   role: string
   myInitial: string
+  isActive: boolean
 }
 
-function CheckinRecordPage({ role, myInitial }: Props) {
+function CheckinRecordPage({ role, myInitial, isActive }: Props) {
   const [records, setRecords] = useState<CheckinRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -101,10 +102,11 @@ function CheckinRecordPage({ role, myInitial }: Props) {
   }
 
   useEffect(() => {
+    if (!isActive) return
     loadRecords()
     const timer = setInterval(loadRecords, 5000)
     return () => clearInterval(timer)
-  }, [])
+  }, [isActive])
 
   function handleAck(id: string) {
     fetch(CHECKIN_API_URL + '/ack', {

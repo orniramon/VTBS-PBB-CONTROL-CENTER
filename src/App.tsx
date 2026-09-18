@@ -88,13 +88,21 @@ function App() {
   if (session) {
     return (
       <MainLayout initial={session.initial} role={session.role} onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab}>
-        {activeTab === 'VTBS PBB CHECK' && <CheckinPage />}
-        {activeTab === 'PBB Check Record' && <CheckinRecordPage role={session.role} myInitial={session.initial} />}
-        {activeTab === 'PBB Photo' && <PhotoPage myInitial={session.initial} role={session.role} />}
-        {activeTab === 'PBB Operator' && (
+        <div style={{ display: activeTab === 'VTBS PBB CHECK' ? 'block' : 'none' }}>
+          <CheckinPage />
+        </div>
+        <div style={{ display: activeTab === 'PBB Check Record' ? 'block' : 'none' }}>
+          <CheckinRecordPage role={session.role} myInitial={session.initial} isActive={activeTab === 'PBB Check Record'} />
+        </div>
+        <div style={{ display: activeTab === 'PBB Photo' ? 'block' : 'none' }}>
+          <PhotoPage myInitial={session.initial} role={session.role} isActive={activeTab === 'PBB Photo'} />
+        </div>
+        <div style={{ display: activeTab === 'PBB Operator' ? 'block' : 'none' }}>
           <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
-        )}
-        {activeTab === 'e-Summary' && <EsummaryPage />}
+        </div>
+        <div style={{ display: activeTab === 'e-Summary' ? 'block' : 'none' }}>
+          <EsummaryPage isActive={activeTab === 'e-Summary'} />
+        </div>
       </MainLayout>
     )
   }

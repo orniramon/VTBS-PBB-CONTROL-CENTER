@@ -57,11 +57,11 @@ const DEFAULT_COLS: ColDef[] = [
 
 type FlightGroup = { checkinId: string; positions: PhotoRow[] }
 
-type Props = { myInitial: string; role: string }
+type Props = { myInitial: string; role: string; isActive: boolean }
 
 const SEARCH_ALLOWED_ROLES = ['Supervisor', 'Apron', 'Sup. PBB Operator']
 
-function PhotoPage({ myInitial, role }: Props) {
+function PhotoPage({ myInitial, role, isActive }: Props) {
   const [rows, setRows] = useState<PhotoRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState('')
@@ -101,17 +101,21 @@ function PhotoPage({ myInitial, role }: Props) {
   }
 
   useEffect(() => {
-    load()
-    const timer = setInterval(load, 10000)
     fetch(CHECKIN_API_URL + '/stands')
       .then((res) => res.json())
       .then((data: { stand: string; concourse: string }[]) => {
         setAllConcourses(Array.from(new Set((data || []).map((s) => s.concourse))).sort())
       })
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!isActive) return
+    load()
+    const timer = setInterval(load, 10000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isActive])
 
   function onColDrop(from: ColKey, to: ColKey) {
     const arr = [...cols]
