@@ -188,12 +188,8 @@ function CheckinRecordPage({ role, myInitial }: Props) {
         @media (min-width: 900px) {
           .rec-grid { display: grid; grid-template-columns: 1fr 1fr; max-width: 100%; width: 100%; gap: 20px; }
         }
-        .rec-cell { font-size: 12px; padding: 6px 4px; }
-        .rec-header-cell { font-size: 11px; padding: 6px 4px; }
-        @media (max-width: 480px) {
-          .rec-cell { font-size: 10px; padding: 4px 2px; }
-          .rec-header-cell { font-size: 9.5px; padding: 4px 2px; }
-        }
+        .rec-cell { font-size: clamp(9px, 1.4vw, 13px); padding: clamp(2px, 0.5vw, 6px) clamp(2px, 0.3vw, 4px); }
+        .rec-header-cell { font-size: clamp(8.5px, 1.3vw, 12px); padding: clamp(2px, 0.5vw, 6px) clamp(2px, 0.3vw, 4px); }
       `}</style>
 
       {loading && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}

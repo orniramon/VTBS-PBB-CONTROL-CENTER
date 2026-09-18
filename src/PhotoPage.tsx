@@ -136,12 +136,8 @@ function PhotoPage({ myInitial, role }: Props) {
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box', maxWidth: '100%' }}>
       <style>{`
-        .photo-cell { font-size: 12px; padding: 6px 4px; }
-        .photo-header-cell { font-size: 11px; padding: 6px 4px; }
-        @media (max-width: 480px) {
-          .photo-cell { font-size: 10px; padding: 4px 2px; }
-          .photo-header-cell { font-size: 9.5px; padding: 4px 2px; }
-        }
+        .photo-cell { font-size: clamp(9px, 1.4vw, 13px); padding: clamp(2px, 0.5vw, 6px) clamp(2px, 0.3vw, 4px); }
+        .photo-header-cell { font-size: clamp(8.5px, 1.3vw, 12px); padding: clamp(2px, 0.5vw, 6px) clamp(2px, 0.3vw, 4px); }
         .concourse-grid { display: flex; flex-direction: column; gap: 8px; }
         @media (min-width: 900px) {
           .concourse-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -209,8 +205,9 @@ function PhotoPage({ myInitial, role }: Props) {
                     style={{
                       ...toggleStyle,
                       width: '100%',
+                      fontWeight: 700,
                       borderRadius: isOpen ? '8px 8px 0 0' : 8,
-                      border: isOpen ? '2px solid #1a73e8' : '1px solid #ccc',
+                      border: !isDesktop && isOpen ? '2px solid #1a73e8' : '1px solid #ccc',
                       background: getConcourseColor(c),
                       color: '#33403a',
                       display: 'flex',
