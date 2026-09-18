@@ -177,7 +177,7 @@ function PhotoPage({ myInitial, role }: Props) {
       </div>
       </div>
 
-      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <div style={{ maxWidth: '100%', margin: '0 auto' }}>
       {selectedType && (
         <>
           <label style={sectionLabelStyle}>Concourse</label>
@@ -207,7 +207,7 @@ function PhotoPage({ myInitial, role }: Props) {
                       width: '100%',
                       fontWeight: 700,
                       borderRadius: isOpen ? '8px 8px 0 0' : 8,
-                      border: !isDesktop && isOpen ? '2px solid #1a73e8' : '1px solid #ccc',
+                      border: !isDesktop && isOpen ? '2px solid #1a73e8' : 'none',
                       background: getConcourseColor(c),
                       color: '#33403a',
                       display: 'flex',
