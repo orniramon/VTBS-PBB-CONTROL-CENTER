@@ -76,6 +76,15 @@ function PhotoPage({ myInitial, role }: Props) {
   const [showSearchModal, setShowSearchModal] = useState(false)
 
   const [cols, setCols] = useState<ColDef[]>(DEFAULT_COLS)
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 900 : false)
+
+  useEffect(() => {
+    function onResize() {
+      setIsDesktop(window.innerWidth >= 900)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   function load() {
     const params = new URLSearchParams({ hours: String(HOURS_WINDOW) })
@@ -133,6 +142,10 @@ function PhotoPage({ myInitial, role }: Props) {
           .photo-cell { font-size: 10px; padding: 4px 2px; }
           .photo-header-cell { font-size: 9.5px; padding: 4px 2px; }
         }
+        .concourse-grid { display: flex; flex-direction: column; gap: 8px; }
+        @media (min-width: 900px) {
+          .concourse-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        }
       `}</style>
 
       {SEARCH_ALLOWED_ROLES.includes(role) && (
@@ -166,13 +179,15 @@ function PhotoPage({ myInitial, role }: Props) {
           </button>
         ))}
       </div>
+      </div>
 
+      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
       {selectedType && (
         <>
           <label style={sectionLabelStyle}>Concourse</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          <div className="concourse-grid" style={{ marginBottom: 16 }}>
             {allConcourses.map((c) => {
-              const isOpen = selectedConcourse === c
+              const isOpen = isDesktop || selectedConcourse === c
               const concourseFilteredRows = rows.filter((r) => r.serviceType === selectedType && r.concourse === c)
               const concourseGroups: FlightGroup[] = []
               concourseFilteredRows.forEach((r) => {
@@ -190,24 +205,21 @@ function PhotoPage({ myInitial, role }: Props) {
               return (
                 <div key={c}>
                   <button
-                    onClick={() => setSelectedConcourse(isOpen ? null : c)}
+                    onClick={() => setSelectedConcourse(selectedConcourse === c ? null : c)}
                     style={{
+                      ...toggleStyle,
                       width: '100%',
-                      padding: '14px 20px',
-                      borderRadius: isOpen ? '12px 12px 0 0' : 12,
-                      border: isOpen ? '3px solid #1a73e8' : '1px solid #ccc',
+                      borderRadius: isOpen ? '8px 8px 0 0' : 8,
+                      border: isOpen ? '2px solid #1a73e8' : '1px solid #ccc',
                       background: getConcourseColor(c),
                       color: '#33403a',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      fontSize: 18,
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
                     }}
                   >
                     <span>Concourse {c}</span>
-                    <span>{isOpen ? '▲' : '▼'}</span>
+                    {!isDesktop && <span>{isOpen ? '▲' : '▼'}</span>}
                   </button>
 
                   {isOpen && !initialLoading && (
@@ -895,7 +907,7 @@ function SubmitPhotoModal({
   )
 }
 
-const sectionLabelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '0 0 8px', color: '#000' }
+const sectionLabelStyle = { display: 'block', fontWeight: 700, fontSize: 20, margin: '0 0 8px', color: '#000' }
 const labelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '14px 0 6px', color: '#000', textAlign: 'left' as const }
 const inputStyle = { width: '100%', padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' as const, background: '#fff', color: '#000' }
 const dateTimeInputStyle = { ...inputStyle, width: 'auto', maxWidth: '100%', display: 'block' as const }
