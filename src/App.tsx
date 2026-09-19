@@ -101,7 +101,7 @@ function App() {
           <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>หน้านี้ยังไม่ได้พัฒนา (ขั้นตอนถัดไป)</div>
         </div>
         <div style={{ display: activeTab === 'e-Summary' ? 'block' : 'none' }}>
-          <EsummaryPage isActive={activeTab === 'e-Summary'} />
+          <EsummaryPage isActive={activeTab === 'e-Summary'} myInitial={session.initial} role={session.role} />
         </div>
       </MainLayout>
     )
