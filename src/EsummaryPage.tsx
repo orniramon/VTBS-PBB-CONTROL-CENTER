@@ -119,6 +119,7 @@ function EsummaryPage({ isActive }: Props) {
   const [firstFlightCandidates, setFirstFlightCandidates] = useState<CheckinRow[]>([])
   const [firstFlightId, setFirstFlightId] = useState('')
   const [loadingCandidates, setLoadingCandidates] = useState(false)
+  const [candidatesChecked, setCandidatesChecked] = useState(false)
 
   const [reportReady, setReportReady] = useState(false)
   const [rows, setRows] = useState<CheckinRow[]>([])
@@ -189,6 +190,7 @@ function EsummaryPage({ isActive }: Props) {
     const { start } = getShiftBounds(reportDate, timeRange)
     const windowStart = new Date(start.getTime() - 45 * 60 * 1000)
     setLoadingCandidates(true)
+    setCandidatesChecked(false)
     try {
       const res = await fetch(
         ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse, from: windowStart.toISOString(), to: start.toISOString() })
@@ -199,6 +201,7 @@ function EsummaryPage({ isActive }: Props) {
       setFirstFlightCandidates([])
     } finally {
       setLoadingCandidates(false)
+      setCandidatesChecked(true)
     }
   }
 
@@ -287,6 +290,7 @@ function EsummaryPage({ isActive }: Props) {
     setSupervisorName('')
     setFirstFlightCandidates([])
     setFirstFlightId('')
+    setCandidatesChecked(false)
     setLastFlightId('')
     setRows([])
   }
@@ -406,11 +410,23 @@ function EsummaryPage({ isActive }: Props) {
         </div>
       )}
 
-      {concourse && creating && !reportReady && (loadingCandidates || firstFlightCandidates.length > 0) && (
+      {concourse && creating && !reportReady && candidatesChecked && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 420, marginTop: 16 }}>
           <label style={labelStyle}>Choose First Flight *</label>
           {loadingCandidates ? (
             <div style={{ color: '#888' }}>กำลังโหลด...</div>
+          ) : firstFlightCandidates.length === 0 ? (
+            <div style={{ background: '#fce8e6', border: '1px solid #c5221f', borderRadius: 8, padding: 12, fontSize: 13, color: '#c5221f' }}>
+              ไม่พบไฟลท์ที่เชคอินในช่วง{' '}
+              {reportDate && timeRange && (
+                <>
+                  {fmtDateTimeShort(new Date(getShiftBounds(reportDate, timeRange).start.getTime() - 45 * 60 * 1000).toISOString())} —{' '}
+                  {fmtDateTimeShort(getShiftBounds(reportDate, timeRange).start.toISOString())}
+                </>
+              )}
+              <br />
+              (ต้องมีการเชคอินผ่านหน้า VTBS PBB CHECK จริงในช่วงนี้ก่อน ถึงจะเลือกเป็น First Flight ได้)
+            </div>
           ) : (
             <select value={firstFlightId} onChange={(e) => setFirstFlightId(e.target.value)} style={inputStyle}>
               <option value="">-- เลือกไฟลท์แรกของกะ --</option>
