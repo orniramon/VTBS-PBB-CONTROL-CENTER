@@ -29,6 +29,22 @@ type MergedRow = { arr?: CheckinRow; dep?: CheckinRow }
 const TIME_RANGES = ['08:00-17:00', '17:00-08:00']
 const SHIFT_NUMBERS = [1, 2, 3, 4]
 
+const CONCOURSE_COLORS: Record<string, string> = {
+  A: '#e6f5ec',
+  B: '#fcedd9',
+  C: '#e6eff9',
+  D: '#f8e9e9',
+  E: '#eff5e2',
+  F: '#f1ecf8',
+  G: '#e2f5f4',
+  S: '#fff4d6',
+}
+function getConcourseColor(concourse: string) {
+  if (CONCOURSE_COLORS[concourse]) return CONCOURSE_COLORS[concourse]
+  const letter = concourse.replace(/[0-9]+$/, '')
+  return CONCOURSE_COLORS[letter] || '#e0e0e0'
+}
+
 function toBangkokIso(dateStr: string, hh: number, mm: number) {
   return `${dateStr}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+07:00`
 }
@@ -105,6 +121,7 @@ function EsummaryPage({ isActive }: Props) {
   const [allConcourses, setAllConcourses] = useState<string[]>([])
   const [concourse, setConcourse] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [checkingActive, setCheckingActive] = useState(false)
 
   const [reportDate, setReportDate] = useState('')
   const [timeRange, setTimeRange] = useState('')
@@ -114,23 +131,27 @@ function EsummaryPage({ isActive }: Props) {
   const [supervisorError, setSupervisorError] = useState('')
 
   const [checking, setChecking] = useState(false)
-  const [existingSummary, setExistingSummary] = useState<any>(null)
 
   const [firstFlightCandidates, setFirstFlightCandidates] = useState<CheckinRow[]>([])
   const [firstFlightId, setFirstFlightId] = useState('')
+  const [firstFlightTime, setFirstFlightTime] = useState('')
   const [loadingCandidates, setLoadingCandidates] = useState(false)
   const [candidatesChecked, setCandidatesChecked] = useState(false)
+  const [creatingDraft, setCreatingDraft] = useState(false)
+  const [createDraftError, setCreateDraftError] = useState('')
 
+  const [summaryId, setSummaryId] = useState('')
   const [reportReady, setReportReady] = useState(false)
   const [rows, setRows] = useState<CheckinRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [selectedRow, setSelectedRow] = useState<number | null>(null)
 
   const [lastFlightId, setLastFlightId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [confirming, setConfirming] = useState(false)
 
-  const [viewingHistorical, setViewingHistorical] = useState(false)
+  const [isSubmitted, setIsSubmitted] = useState(false)
 
   const supervisorReqIdRef = useRef(0)
 
@@ -143,10 +164,20 @@ function EsummaryPage({ isActive }: Props) {
       .catch(() => {})
   }, [])
 
+  // เมื่อแก้ไขข้อมูลในฟอร์ม (วันที่/เวลากะ/ผลัด/ผช.หน.ชุด) หลังจากเคยกด "ถัดไป" ไปแล้ว
+  // ให้รีเซ็ตสถานะ เพื่อให้กดถัดไปใหม่ได้อีกครั้ง (ปุ่มจะกลับมาเป็นสีปกติ ไม่เทาค้าง)
+  function resetCandidatesCheck() {
+    setCandidatesChecked(false)
+    setFirstFlightCandidates([])
+    setFirstFlightId('')
+    setCreateDraftError('')
+  }
+
   async function lookupSupervisor(initial: string) {
     setSupervisorInitial(initial)
     setSupervisorName('')
     setSupervisorError('')
+    resetCandidatesCheck()
     if (!initial) return
     // กันปัญหาพิมพ์เร็ว แล้วผลลัพธ์ของตัวอักษรก่อนหน้า (เช่น "W") มาถึงช้ากว่า
     // ผลลัพธ์ของตัวล่าสุด (เช่น "WR") จนไปเขียนทับสถานะที่ถูกต้องอยู่แล้ว
@@ -163,17 +194,51 @@ function EsummaryPage({ isActive }: Props) {
     }
   }
 
+  // ----------------------------------------------------------------
+  // กดปุ่มเลือก Concourse -> เช็คก่อนว่ามีคนสร้าง e-Summary ของ concourse
+  // นี้ค้างอยู่ (ยังไม่ submit) หรือไม่ ถ้ามีให้โหลดเข้ามาแสดงเลยทันที
+  // ไม่ต้องกรอกวันที่/เวลา/ผลัด/ชื่อผช.หน.ชุด ซ้ำ
+  // ----------------------------------------------------------------
+  function handleSelectConcourse(c: string) {
+    setConcourse(c)
+    resetAll()
+    setCheckingActive(true)
+    fetch(ESUMMARY_API_URL + '/draft-active?concourse=' + encodeURIComponent(c))
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          setSummaryId(data.id)
+          setReportDate(data.reportDate)
+          setTimeRange(data.timeRange)
+          setShiftNumber(data.shiftNumber)
+          setSupervisorInitial(data.supervisorInitial)
+          setSupervisorName(data.supervisorName || '')
+          setFirstFlightId(data.firstFlightCheckinId)
+          setFirstFlightTime(data.firstFlightTime)
+          setIsSubmitted(false)
+          setReportReady(true)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCheckingActive(false))
+  }
+
   async function handleCheckShift() {
-    if (!concourse || !reportDate || !timeRange || !shiftNumber || !supervisorName) return
+    if (!concourse || !reportDate || !timeRange || !shiftNumber || !supervisorInitial) return
     setChecking(true)
-    setExistingSummary(null)
     try {
       const params = new URLSearchParams({ concourse, reportDate, timeRange, shiftNumber: String(shiftNumber) })
       const res = await fetch(ESUMMARY_API_URL + '/shift-lookup?' + params.toString())
       const data = await res.json()
-      if (data) {
-        setExistingSummary(data)
-        setViewingHistorical(true)
+      if (data && data.isSubmitted) {
+        // กะนี้ถูก submit ไปแล้ว - เปิดดูแบบอ่านอย่างเดียว
+        setSummaryId(data.id)
+        setReportDate(data.reportDate)
+        setTimeRange(data.timeRange)
+        setShiftNumber(data.shiftNumber)
+        setSupervisorInitial(data.supervisorInitial)
+        setSupervisorName(data.supervisorName || '')
+        setIsSubmitted(true)
         setLoading(true)
         const rowsRes = await fetch(
           ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse, from: data.firstFlightTime, to: data.lastFlightTime })
@@ -212,14 +277,11 @@ function EsummaryPage({ isActive }: Props) {
     }
   }
 
-  function loadLiveRows() {
-    if (!concourse || !reportDate || !timeRange || !firstFlightId) return
-    const firstFlight = firstFlightCandidates.find((r) => r.checkinId === firstFlightId)
-    if (!firstFlight) return
-    const { end } = getShiftBounds(reportDate, timeRange)
-    const windowEnd = new Date(end.getTime() + 45 * 60 * 1000)
-    setLoading(true)
-    fetch(ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse, from: firstFlight.createdAt, to: windowEnd.toISOString() }))
+  function loadLiveRows(silent?: boolean) {
+    if (!concourse || !firstFlightTime) return
+    if (!silent) setLoading(true)
+    const windowEnd = new Date(Date.now() + 60 * 60 * 1000)
+    fetch(ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse, from: firstFlightTime, to: windowEnd.toISOString() }))
       .then((res) => res.json())
       .then((data) => {
         setRows(Array.isArray(data) ? data : [])
@@ -229,24 +291,22 @@ function EsummaryPage({ isActive }: Props) {
   }
 
   useEffect(() => {
-    if (!reportReady || viewingHistorical || !isActive) return
+    if (!reportReady || isSubmitted || !isActive) return
     loadLiveRows()
-    const timer = setInterval(loadLiveRows, 10000)
+    // โพลข้อมูลแบบเงียบๆ (ไม่เปิด "กำลังโหลด..." ทุกรอบ) กันหน้าจอกระพริบ
+    const timer = setInterval(() => loadLiveRows(true), 10000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportReady, viewingHistorical, isActive, firstFlightId])
+  }, [reportReady, isSubmitted, isActive, firstFlightTime])
 
-  function handleConfirmFirstFlight() {
-    if (!firstFlightId) return
-    setReportReady(true)
-  }
-
-  async function handleSubmitSummary() {
-    setSubmitError('')
-    if (!lastFlightId) return setSubmitError('กรุณาเลือกไฟลท์สุดท้ายของกะนี้')
-    setSubmitting(true)
+  async function handleConfirmFirstFlight() {
+    if (!firstFlightId || !concourse) return
+    const flight = firstFlightCandidates.find((r) => r.checkinId === firstFlightId)
+    if (!flight) return
+    setCreatingDraft(true)
+    setCreateDraftError('')
     try {
-      const res = await fetch(ESUMMARY_API_URL + '/shift-submit', {
+      const res = await fetch(ESUMMARY_API_URL + '/shift-create-draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -257,8 +317,46 @@ function EsummaryPage({ isActive }: Props) {
           supervisorInitial,
           supervisorName,
           firstFlightCheckinId: firstFlightId,
-          lastFlightCheckinId: lastFlightId,
         }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSummaryId(data.id)
+        setFirstFlightTime(flight.createdAt)
+        setIsSubmitted(false)
+        setReportReady(true)
+      } else {
+        setCreateDraftError(data.message || 'สร้าง e-Summary ไม่สำเร็จ (อาจมีคนอื่นสร้างของ concourse นี้ไปพร้อมกัน ลองกดเลือก Concourse ใหม่อีกครั้ง)')
+      }
+    } catch {
+      setCreateDraftError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
+    } finally {
+      setCreatingDraft(false)
+    }
+  }
+
+  async function handleSubmitSummary() {
+    setSubmitError('')
+    if (!lastFlightId) return setSubmitError('กรุณาเลือกไฟลท์สุดท้ายของกะนี้')
+    // ตรวจว่าทุกไฟลท์ในตาราง มีการกรอกเวลาเทียบ/เวลาถอย ครบตามที่ต้องมีหรือยัง
+    const incomplete = mergedRows.find((m) => {
+      const checkSide = (r?: CheckinRow) => {
+        if (!r) return false
+        if (!r.initialL1) return false // ยังไม่มีข้อมูล L1 เลย ไม่ต้องเช็ค (แปลว่าไม่มีการใช้สะพานฝั่งนี้)
+        return !r.l1EventTime
+      }
+      return checkSide(m.arr) || checkSide(m.dep)
+    })
+    if (incomplete) {
+      const fn = incomplete.arr?.flightNo || incomplete.dep?.flightNo || ''
+      return setSubmitError(`ส่ง e-Summary ไม่สำเร็จ ใส่เวลา (เทียบ)/(ถอย) ไม่ครบ Flight No. ${fn}`)
+    }
+    setSubmitting(true)
+    try {
+      const res = await fetch(ESUMMARY_API_URL + '/shift-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: summaryId, lastFlightCheckinId: lastFlightId }),
       })
       const data = await res.json()
       if (data.success) {
@@ -275,12 +373,15 @@ function EsummaryPage({ isActive }: Props) {
   }
 
   async function handleDeleteSummary() {
-    if (!existingSummary) return
-    if (!confirm('ยืนยันการลบ e-Summary นี้? ไฟลท์ในช่วงนี้จะกลับไปเป็น "ยังไม่ถูกสรุป" ทันที')) return
+    if (!summaryId) return
+    const msg = isSubmitted
+      ? 'ยืนยันการลบ e-Summary นี้? ไฟลท์ในช่วงนี้จะกลับไปเป็น "ยังไม่ถูกสรุป" ทันที'
+      : 'ยืนยันการยกเลิก e-Summary ที่กำลังทำอยู่นี้? (ใช้เมื่อกรอก วันที่/เวลา/ผลัด/ชื่อผช.หน.ชุด หรือเลือก First Flight ผิด)'
+    if (!confirm(msg)) return
     await fetch(ESUMMARY_API_URL + '/shift-delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: existingSummary.id }),
+      body: JSON.stringify({ id: summaryId }),
     })
     resetAll()
   }
@@ -288,18 +389,24 @@ function EsummaryPage({ isActive }: Props) {
   function resetAll() {
     setCreating(false)
     setReportReady(false)
-    setViewingHistorical(false)
-    setExistingSummary(null)
+    setIsSubmitted(false)
+    setSummaryId('')
     setReportDate('')
     setTimeRange('')
     setShiftNumber(null)
     setSupervisorInitial('')
     setSupervisorName('')
+    setSupervisorError('')
     setFirstFlightCandidates([])
     setFirstFlightId('')
+    setFirstFlightTime('')
     setCandidatesChecked(false)
+    setCreateDraftError('')
     setLastFlightId('')
     setRows([])
+    setSelectedRow(null)
+    setSubmitError('')
+    setConfirming(false)
   }
 
   const { end: shiftEnd } = reportDate && timeRange ? getShiftBounds(reportDate, timeRange) : { end: null as unknown as Date }
@@ -307,11 +414,11 @@ function EsummaryPage({ isActive }: Props) {
     shiftEnd && rows.length > 0
       ? rows.filter((r) => {
           const t = new Date(r.createdAt).getTime()
-          return t >= shiftEnd.getTime() - 45 * 60 * 1000 && t <= shiftEnd.getTime()
+          return t >= shiftEnd.getTime() - 45 * 60 * 1000 && t <= shiftEnd.getTime() + 45 * 60 * 1000
         })
       : []
 
-  const boundedRows = viewingHistorical
+  const boundedRows = isSubmitted
     ? rows
     : lastFlightId
       ? rows.filter((r) => new Date(r.createdAt).getTime() <= new Date(rows.find((x) => x.checkinId === lastFlightId)?.createdAt || 0).getTime())
@@ -332,27 +439,30 @@ function EsummaryPage({ isActive }: Props) {
     if (r.l2EventTime) bump(r.initialL2, field)
     if (r.l3EventTime) bump(r.initialL3, field)
   })
+  const opInitials = Object.keys(opCounts).sort()
+  const totalDock = opInitials.reduce((s, k) => s + opCounts[k].dock, 0)
+  const totalPush = opInitials.reduce((s, k) => s + opCounts[k].push, 0)
+
+  const nextDisabled = !reportDate || !timeRange || !shiftNumber || !supervisorInitial || checking || candidatesChecked
 
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box' }}>
       <label style={sectionLabelStyle}>Concourse</label>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16, maxWidth: 320 }}>
         {allConcourses.map((c) => (
           <button
             key={c}
-            onClick={() => {
-              setConcourse(c)
-              resetAll()
-            }}
+            onClick={() => handleSelectConcourse(c)}
             style={{
-              padding: '10px 20px',
-              borderRadius: 20,
+              padding: '14px 20px',
+              borderRadius: 10,
               border: concourse === c ? '2px solid #1a73e8' : '1px solid #ccc',
-              background: concourse === c ? '#e8f0fe' : '#fff',
+              background: getConcourseColor(c),
               color: '#000',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: 14,
+              fontSize: 16,
+              textAlign: 'left',
             }}
           >
             {c}
@@ -360,23 +470,38 @@ function EsummaryPage({ isActive }: Props) {
         ))}
       </div>
 
-      {concourse && !creating && !reportReady && (
-        <button onClick={() => setCreating(true)} style={{ ...buttonStyle, background: '#1a73e8', color: '#fff' }}>
-          Create e-Summary
-        </button>
+      {concourse && checkingActive && <div style={{ color: '#888', maxWidth: 480, margin: '0 auto' }}>กำลังตรวจสอบ...</div>}
+
+      {concourse && !checkingActive && !creating && !reportReady && (
+        <div style={{ maxWidth: 480, margin: '0 auto', textAlign: 'center' }}>
+          <button onClick={() => setCreating(true)} style={{ ...buttonStyle, background: '#1a73e8', color: '#fff' }}>
+            Create e-Summary
+          </button>
+        </div>
       )}
 
       {concourse && creating && !reportReady && (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 420 }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 480, margin: '16px auto' }}>
           <label style={labelStyle}>วันที่เริ่มกะ</label>
-          <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} style={dateTimeInputStyle} />
+          <input
+            type="date"
+            value={reportDate}
+            onChange={(e) => {
+              setReportDate(e.target.value)
+              resetCandidatesCheck()
+            }}
+            style={dateTimeInputStyle}
+          />
 
           <label style={labelStyle}>TIME</label>
           <div style={{ display: 'flex', gap: 8 }}>
             {TIME_RANGES.map((t) => (
               <button
                 key={t}
-                onClick={() => setTimeRange(t)}
+                onClick={() => {
+                  setTimeRange(t)
+                  resetCandidatesCheck()
+                }}
                 style={{ ...toggleStyle, background: timeRange === t ? '#1a73e8' : '#fff', color: timeRange === t ? '#fff' : '#000' }}
               >
                 {t}
@@ -394,7 +519,10 @@ function EsummaryPage({ isActive }: Props) {
             {SHIFT_NUMBERS.map((n) => (
               <button
                 key={n}
-                onClick={() => setShiftNumber(n)}
+                onClick={() => {
+                  setShiftNumber(n)
+                  resetCandidatesCheck()
+                }}
                 style={{ ...toggleStyle, background: shiftNumber === n ? '#1a73e8' : '#fff', color: shiftNumber === n ? '#fff' : '#000' }}
               >
                 {n}
@@ -409,8 +537,15 @@ function EsummaryPage({ isActive }: Props) {
 
           <button
             onClick={handleCheckShift}
-            disabled={!reportDate || !timeRange || !shiftNumber || !supervisorName || checking}
-            style={{ ...buttonStyle, background: '#34a853', color: '#fff', width: '100%', marginTop: 16 }}
+            disabled={nextDisabled}
+            style={{
+              ...buttonStyle,
+              background: nextDisabled ? '#ccc' : '#34a853',
+              color: '#fff',
+              width: '100%',
+              marginTop: 16,
+              cursor: nextDisabled ? 'default' : 'pointer',
+            }}
           >
             {checking ? 'กำลังตรวจสอบ...' : 'ถัดไป'}
           </button>
@@ -418,7 +553,7 @@ function EsummaryPage({ isActive }: Props) {
       )}
 
       {concourse && creating && !reportReady && candidatesChecked && (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 420, marginTop: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 480, margin: '16px auto' }}>
           <label style={labelStyle}>Choose First Flight *</label>
           {loadingCandidates ? (
             <div style={{ color: '#888' }}>กำลังโหลด...</div>
@@ -446,226 +581,317 @@ function EsummaryPage({ isActive }: Props) {
           )}
           <button
             onClick={handleConfirmFirstFlight}
-            disabled={!firstFlightId}
-            style={{ ...buttonStyle, background: '#34a853', color: '#fff', width: '100%', marginTop: 12 }}
+            disabled={!firstFlightId || creatingDraft}
+            style={{ ...buttonStyle, background: !firstFlightId || creatingDraft ? '#ccc' : '#34a853', color: '#fff', width: '100%', marginTop: 12 }}
           >
-            Create e-Summary
+            {creatingDraft ? 'กำลังสร้าง...' : 'Create e-Summary'}
           </button>
+          {createDraftError && <div style={{ color: '#c5221f', fontSize: 13, marginTop: 8 }}>{createDraftError}</div>}
         </div>
       )}
 
       {reportReady && (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginTop: 16, overflowX: 'auto' }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginTop: 16 }}>
           <h2 style={{ textAlign: 'center', color: '#000' }}>VTBS PBB Operator Performance Report</h2>
           <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 16 }}>
-            DATE {reportDate} &nbsp; TIME {timeRange} &nbsp; SHIFT {shiftNumber} &nbsp; CONCOURSE {concourse} &nbsp; ผช.หน.ชุดฯ {supervisorInitial} ({supervisorName})
+            DATE {reportDate} &nbsp; TIME {timeRange} &nbsp; SHIFT {shiftNumber} &nbsp; CONCOURSE {concourse} &nbsp; ผช.หน.ชุด ประจำ Concourse{' '}
+            {supervisorName || '-'} ({supervisorInitial})
           </div>
 
           {loading && <div style={{ textAlign: 'center', color: '#888' }}>กำลังโหลด...</div>}
 
-          <div style={{ minWidth: 1600 }}>
-            <table style={reportTableStyle}>
+          <div style={{ maxHeight: '70vh', overflow: 'auto', border: '1px solid #ddd' }}>
+            <div style={{ minWidth: 1700 }}>
+              <table style={reportTableStyle}>
+                <thead>
+                  <tr>
+                    <th style={{ ...th, ...stickyCol, ...stickyRow, zIndex: 3 }} rowSpan={2}>
+                      No.
+                    </th>
+                    <th style={{ ...th, ...stickyRow, background: '#e6f4ea' }} colSpan={10}>
+                      ขาเข้า (ARR) และ เรียกเทียบ PBB (TOWING IN)
+                    </th>
+                    <th style={{ ...th, ...stickyRow, background: '#fef7e0', borderLeft: '3px solid #000' }} colSpan={9}>
+                      ขาออก (DEP) และ เรียกถอย PBB (TOWING OUT)
+                    </th>
+                  </tr>
+                  <tr>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>Flight No.</th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>หลุมจอด</th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>EIBT</th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      A/C Type
+                      <br />
+                      A/C Reg.
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้เช็ค
+                      <br />
+                      เวลา PBB Check
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ACK
+                      <br />
+                      เวลา ACK
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้เทียบ L1
+                      <br />
+                      เวลาเทียบ
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้เทียบ L2
+                      <br />
+                      เวลาเทียบ
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้เทียบ L3
+                      <br />
+                      เวลาเทียบ
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้ตรวจ (MIMIC)
+                      <br />
+                      เวลาเช็ค
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33, borderLeft: '3px solid #000' }}>Flight No.</th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>หลุมจอด</th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>EOBT</th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      A/C Type
+                      <br />
+                      A/C Reg.
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้เช็ค
+                      <br />
+                      เวลา PBB Check
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ACK
+                      <br />
+                      เวลา ACK
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้ถอย L1
+                      <br />
+                      เวลาถอย
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้ถอย L2
+                      <br />
+                      เวลาถอย
+                    </th>
+                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                      ผู้ถอย L3
+                      <br />
+                      เวลาถอย
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mergedRows.map((m, i) => {
+                    const a = m.arr
+                    const d = m.dep
+                    const mim = mimicInfo(a)
+                    const rowBg = selectedRow === i ? '#fff6c9' : i % 2 === 0 ? '#fff' : '#fafafa'
+                    return (
+                      <tr key={i} onClick={() => setSelectedRow(selectedRow === i ? null : i)} style={{ cursor: 'pointer' }}>
+                        <td style={{ ...td, ...stickyCol, background: rowBg, fontWeight: 600 }}>{i + 1}</td>
+                        <td style={{ ...td, background: rowBg }}>
+                          {a ? (
+                            <>
+                              {a.flightNo}
+                              {a.serviceType === 'TOWING IN' && <div style={smallNote}>(TOWING IN)</div>}
+                            </>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td style={{ ...td, background: rowBg }}>{a ? a.stand : '-'}</td>
+                        <td style={{ ...td, background: rowBg }}>{a ? (a.serviceType === 'TOWING IN' ? '-' : fmtTime(a.eibt)) : '-'}</td>
+                        <td style={{ ...td, background: rowBg }}>
+                          {a ? (
+                            <>
+                              <div>{a.aircraftType}</div>
+                              <div>{a.aircraftReg || '-'}</div>
+                            </>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td style={{ ...td, background: rowBg }}>
+                          {a ? (
+                            <>
+                              <div>{a.initialL1}</div>
+                              <div>{fmtTime(a.createdAt)}</div>
+                            </>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td style={{ ...td, background: rowBg }}>
+                          {a ? (
+                            a.ack ? (
+                              <>
+                                <div>{a.ackByInitial}</div>
+                                <div>{fmtTime(a.ackAt)}</div>
+                              </>
+                            ) : (
+                              ''
+                            )
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        {[1, 2, 3].map((n) => {
+                          const initial = a ? (a as any)[`initialL${n}`] : null
+                          const time = a ? (a as any)[`l${n}EventTime`] : null
+                          const cell = a ? personCell(initial, time) : '-'
+                          return (
+                            <td key={n} style={{ ...td, background: rowBg }}>
+                              {cell === '-' || typeof cell === 'string' ? (
+                                cell
+                              ) : (
+                                <>
+                                  <div>{cell.initial}</div>
+                                  <div>{cell.time}</div>
+                                </>
+                              )}
+                            </td>
+                          )
+                        })}
+                        <td style={{ ...td, background: rowBg }}>
+                          {!a ? (
+                            '-'
+                          ) : mim ? (
+                            <>
+                              <div>{mim.initial}</div>
+                              <div>{fmtTime(mim.time)}</div>
+                            </>
+                          ) : (
+                            ''
+                          )}
+                        </td>
+                        <td style={{ ...td, background: rowBg, borderLeft: '3px solid #000' }}>
+                          {d ? (
+                            <>
+                              {d.flightNo}
+                              {d.serviceType === 'TOWING OUT' && <div style={smallNote}>(TOWING OUT)</div>}
+                            </>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td style={{ ...td, background: rowBg }}>{d ? d.stand : '-'}</td>
+                        <td style={{ ...td, background: rowBg }}>{d ? (d.serviceType === 'TOWING OUT' ? '-' : fmtTime(d.eobt)) : '-'}</td>
+                        <td style={{ ...td, background: rowBg }}>
+                          {d ? (
+                            <>
+                              <div>{d.aircraftType}</div>
+                              <div>{d.aircraftReg || '-'}</div>
+                            </>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td style={{ ...td, background: rowBg }}>
+                          {d ? (
+                            <>
+                              <div>{d.initialL1}</div>
+                              <div>{fmtTime(d.createdAt)}</div>
+                            </>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td style={{ ...td, background: rowBg }}>
+                          {d ? (
+                            d.ack ? (
+                              <>
+                                <div>{d.ackByInitial}</div>
+                                <div>{fmtTime(d.ackAt)}</div>
+                              </>
+                            ) : (
+                              ''
+                            )
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        {[1, 2, 3].map((n) => {
+                          const initial = d ? (d as any)[`initialL${n}`] : null
+                          const time = d ? (d as any)[`l${n}EventTime`] : null
+                          const cell = d ? personCell(initial, time) : '-'
+                          return (
+                            <td key={n} style={{ ...td, background: rowBg }}>
+                              {cell === '-' || typeof cell === 'string' ? (
+                                cell
+                              ) : (
+                                <>
+                                  <div>{cell.initial}</div>
+                                  <div>{cell.time}</div>
+                                </>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <h3 style={{ color: '#000', marginTop: 24, textAlign: 'center' }}>สรุปผลงาน PBB Operator</h3>
+          <div style={{ overflowX: 'auto', maxWidth: 900, margin: '0 auto' }}>
+            <table style={{ ...reportTableStyle, minWidth: 'auto' }}>
               <thead>
                 <tr>
-                  <th style={th} rowSpan={2}>No.</th>
-                  <th style={{ ...th, background: '#e6f4ea' }} colSpan={10}>ขาเข้า (ARR) และ เรียกเทียบ PBB (TOWING IN)</th>
-                  <th style={{ ...th, background: '#fef7e0' }} colSpan={9}>ขาออก (DEP) และ เรียกถอย PBB (TOWING OUT)</th>
-                </tr>
-                <tr>
-                  <th style={th}>Flight No.</th>
-                  <th style={th}>หลุมจอด</th>
-                  <th style={th}>EIBT</th>
-                  <th style={th}>A/C Type<br />A/C Reg.</th>
-                  <th style={th}>ผู้เช็ค<br />เวลา PBB Check</th>
-                  <th style={th}>ACK<br />เวลา ACK</th>
-                  <th style={th}>ผู้เทียบ L1<br />เวลาเทียบ</th>
-                  <th style={th}>ผู้เทียบ L2<br />เวลาเทียบ</th>
-                  <th style={th}>ผู้เทียบ L3<br />เวลาเทียบ</th>
-                  <th style={th}>ผู้ตรวจ (MIMIC)<br />เวลาเช็ค</th>
-                  <th style={th}>Flight No.</th>
-                  <th style={th}>หลุมจอด</th>
-                  <th style={th}>EOBT</th>
-                  <th style={th}>A/C Type<br />A/C Reg.</th>
-                  <th style={th}>ผู้เช็ค<br />เวลา PBB Check</th>
-                  <th style={th}>ACK<br />เวลา ACK</th>
-                  <th style={th}>ผู้ถอย L1<br />เวลาถอย</th>
-                  <th style={th}>ผู้ถอย L2<br />เวลาถอย</th>
-                  <th style={th}>ผู้ถอย L3<br />เวลาถอย</th>
+                  <th style={th}>PBB Operator (Initial)</th>
+                  {opInitials.map((initial) => (
+                    <th key={initial} style={th}>
+                      {initial}
+                    </th>
+                  ))}
+                  <th style={{ ...th, background: '#f0f2f5' }}>รวม</th>
                 </tr>
               </thead>
               <tbody>
-                {mergedRows.map((m, i) => {
-                  const a = m.arr
-                  const d = m.dep
-                  const mim = mimicInfo(a)
-                  return (
-                    <tr key={i}>
-                      <td style={td}>{i + 1}</td>
-                      <td style={td}>
-                        {a ? (
-                          <>
-                            {a.flightNo}
-                            {a.serviceType === 'TOWING IN' && <div style={smallNote}>(TOWING IN)</div>}
-                          </>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td style={td}>{a ? a.stand : '-'}</td>
-                      <td style={td}>{a ? (a.serviceType === 'TOWING IN' ? '-' : fmtTime(a.eibt)) : '-'}</td>
-                      <td style={td}>
-                        {a ? (
-                          <>
-                            <div>{a.aircraftType}</div>
-                            <div>{a.aircraftReg || '-'}</div>
-                          </>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td style={td}>
-                        {a ? (
-                          <>
-                            <div>{a.initialL1}</div>
-                            <div>{fmtTime(a.createdAt)}</div>
-                          </>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td style={td}>
-                        {a ? (
-                          a.ack ? (
-                            <>
-                              <div>{a.ackByInitial}</div>
-                              <div>{fmtTime(a.ackAt)}</div>
-                            </>
-                          ) : (
-                            ''
-                          )
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      {[1, 2, 3].map((n) => {
-                        const initial = a ? (a as any)[`initialL${n}`] : null
-                        const time = a ? (a as any)[`l${n}EventTime`] : null
-                        const cell = a ? personCell(initial, time) : '-'
-                        return (
-                          <td key={n} style={td}>
-                            {cell === '-' || typeof cell === 'string' ? (
-                              cell
-                            ) : (
-                              <>
-                                <div>{cell.initial}</div>
-                                <div>{cell.time}</div>
-                              </>
-                            )}
-                          </td>
-                        )
-                      })}
-                      <td style={td}>
-                        {mim ? (
-                          <>
-                            <div>{mim.initial}</div>
-                            <div>{fmtTime(mim.time)}</div>
-                          </>
-                        ) : (
-                          ''
-                        )}
-                      </td>
-                      <td style={td}>
-                        {d ? (
-                          <>
-                            {d.flightNo}
-                            {d.serviceType === 'TOWING OUT' && <div style={smallNote}>(TOWING OUT)</div>}
-                          </>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td style={td}>{d ? d.stand : '-'}</td>
-                      <td style={td}>{d ? (d.serviceType === 'TOWING OUT' ? '-' : fmtTime(d.eobt)) : '-'}</td>
-                      <td style={td}>
-                        {d ? (
-                          <>
-                            <div>{d.aircraftType}</div>
-                            <div>{d.aircraftReg || '-'}</div>
-                          </>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td style={td}>
-                        {d ? (
-                          <>
-                            <div>{d.initialL1}</div>
-                            <div>{fmtTime(d.createdAt)}</div>
-                          </>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td style={td}>
-                        {d ? (
-                          d.ack ? (
-                            <>
-                              <div>{d.ackByInitial}</div>
-                              <div>{fmtTime(d.ackAt)}</div>
-                            </>
-                          ) : (
-                            ''
-                          )
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      {[1, 2, 3].map((n) => {
-                        const initial = d ? (d as any)[`initialL${n}`] : null
-                        const time = d ? (d as any)[`l${n}EventTime`] : null
-                        const cell = d ? personCell(initial, time) : '-'
-                        return (
-                          <td key={n} style={td}>
-                            {cell === '-' || typeof cell === 'string' ? (
-                              cell
-                            ) : (
-                              <>
-                                <div>{cell.initial}</div>
-                                <div>{cell.time}</div>
-                              </>
-                            )}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
+                <tr>
+                  <td style={{ ...td, fontWeight: 700 }}>เทียบ</td>
+                  {opInitials.map((initial) => (
+                    <td key={initial} style={td}>
+                      {opCounts[initial].dock}
+                    </td>
+                  ))}
+                  <td style={{ ...td, fontWeight: 700 }}>{totalDock}</td>
+                </tr>
+                <tr>
+                  <td style={{ ...td, fontWeight: 700 }}>ถอย</td>
+                  {opInitials.map((initial) => (
+                    <td key={initial} style={td}>
+                      {opCounts[initial].push}
+                    </td>
+                  ))}
+                  <td style={{ ...td, fontWeight: 700 }}>{totalPush}</td>
+                </tr>
+                <tr>
+                  <td style={{ ...td, fontWeight: 700 }}>รวม</td>
+                  {opInitials.map((initial) => (
+                    <td key={initial} style={td}>
+                      {opCounts[initial].dock + opCounts[initial].push}
+                    </td>
+                  ))}
+                  <td style={{ ...td, fontWeight: 700 }}>{totalDock + totalPush}</td>
+                </tr>
               </tbody>
             </table>
           </div>
 
-          <h3 style={{ color: '#000', marginTop: 24 }}>สรุปผลงาน PBB Operator</h3>
-          <table style={{ ...reportTableStyle, maxWidth: 400, minWidth: 'auto' }}>
-            <thead>
-              <tr>
-                <th style={th}>PBB Operator</th>
-                <th style={th}>เทียบ</th>
-                <th style={th}>ถอย</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.keys(opCounts).sort().map((initial) => (
-                <tr key={initial}>
-                  <td style={td}>{initial}</td>
-                  <td style={td}>{opCounts[initial].dock}</td>
-                  <td style={td}>{opCounts[initial].push}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {!viewingHistorical && (
-            <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16, maxWidth: 420 }}>
+          {!isSubmitted && (
+            <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16, maxWidth: 480, margin: '24px auto 0' }}>
               <label style={labelStyle}>Choose Last Flight *</label>
               <select value={lastFlightId} onChange={(e) => setLastFlightId(e.target.value)} style={inputStyle}>
                 <option value="">-- เลือกไฟลท์สุดท้ายของกะ --</option>
@@ -680,7 +906,7 @@ function EsummaryPage({ isActive }: Props) {
                 <button
                   onClick={() => setConfirming(true)}
                   disabled={!lastFlightId}
-                  style={{ ...buttonStyle, background: '#c5221f', color: '#fff', width: '100%', marginTop: 12 }}
+                  style={{ ...buttonStyle, background: !lastFlightId ? '#ccc' : '#c5221f', color: '#fff', width: '100%', marginTop: 12 }}
                 >
                   Submit e-Summary
                 </button>
@@ -700,20 +926,26 @@ function EsummaryPage({ isActive }: Props) {
                 </div>
               )}
               {submitError && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{submitError}</div>}
+
+              <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#fff', border: '1px solid #c5221f', color: '#c5221f', width: '100%', marginTop: 16 }}>
+                ลบ / เริ่มใหม่ (ยกเลิก e-Summary ที่กำลังทำอยู่นี้)
+              </button>
             </div>
           )}
 
-          {viewingHistorical && (
-            <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16 }}>
-              <div style={{ color: '#137333', fontWeight: 600, marginBottom: 12 }}>
+          {isSubmitted && (
+            <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16, maxWidth: 480, margin: '24px auto 0' }}>
+              <div style={{ color: '#137333', fontWeight: 600, marginBottom: 12, textAlign: 'center' }}>
                 ✓ e-Summary นี้ถูก Submit ไปแล้ว (แก้ไขไม่ได้ — ถ้าข้อมูลผิด ต้องลบแล้วสร้างใหม่)
               </div>
-              <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#c5221f', color: '#fff' }}>
-                ลบ e-Summary นี้
-              </button>
-              <button onClick={resetAll} style={{ ...buttonStyle, background: '#999', color: '#fff', marginLeft: 8 }}>
-                ปิด
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
+                  ลบ e-Summary นี้
+                </button>
+                <button onClick={resetAll} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
+                  ปิด
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -732,5 +964,7 @@ const reportTableStyle = { width: '100%', borderCollapse: 'collapse' as const, f
 const th = { padding: '6px 6px', textAlign: 'center' as const, color: '#000', border: '1px solid #ddd', background: '#f0f2f5' }
 const td = { padding: '6px 6px', textAlign: 'center' as const, color: '#000', border: '1px solid #eee' }
 const smallNote = { fontSize: '0.85em', color: '#666' }
+const stickyCol = { position: 'sticky' as const, left: 0, zIndex: 2, background: '#f0f2f5' }
+const stickyRow = { position: 'sticky' as const, top: 0, zIndex: 1 }
 
 export default EsummaryPage
