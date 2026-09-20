@@ -5,7 +5,7 @@ import { getServiceTypeColor } from './serviceTypeColors'
 import FitText from './FitText'
 
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
-const HOURS_WINDOW = 5
+const HOURS_WINDOW = 24
 const DOUBLE_CLICK_MS = 400 // ระยะเวลาสูงสุดระหว่าง 2 คลิก/แตะ ถึงจะนับว่าเป็นดับเบิลคลิก
 
 type CheckinRecord = {

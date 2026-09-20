@@ -4,7 +4,7 @@ import { getServiceTypeColor } from './serviceTypeColors'
 
 const PHOTO_API_URL = 'https://photo-api.or-niramon.workers.dev'
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
-const HOURS_WINDOW = 10
+const HOURS_WINDOW = 24
 
 type PhotoRow = {
   checkinId: string
