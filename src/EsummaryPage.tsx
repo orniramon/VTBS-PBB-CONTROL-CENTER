@@ -156,7 +156,7 @@ function EsummaryPage({ isActive }: Props) {
       const data = await res.json()
       if (reqId !== supervisorReqIdRef.current) return // มีการพิมพ์ต่อไปแล้ว ผลนี้เก่าเกินไป ไม่ต้องใช้
       if (data) setSupervisorName(data.fullName)
-      else setSupervisorError('ไม่พบ Initial นี้')
+      else setSupervisorError('ไม่พบ Initial นี้ หรือไม่ใช่ Role PBB Operator')
     } catch {
       if (reqId !== supervisorReqIdRef.current) return
       setSupervisorError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
