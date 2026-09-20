@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 const ESUMMARY_API_URL = 'https://esummary-api.or-niramon.workers.dev'
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
@@ -132,6 +132,8 @@ function EsummaryPage({ isActive }: Props) {
 
   const [viewingHistorical, setViewingHistorical] = useState(false)
 
+  const supervisorReqIdRef = useRef(0)
+
   useEffect(() => {
     fetch(CHECKIN_API_URL + '/stands')
       .then((res) => res.json())
@@ -146,12 +148,17 @@ function EsummaryPage({ isActive }: Props) {
     setSupervisorName('')
     setSupervisorError('')
     if (!initial) return
+    // กันปัญหาพิมพ์เร็ว แล้วผลลัพธ์ของตัวอักษรก่อนหน้า (เช่น "W") มาถึงช้ากว่า
+    // ผลลัพธ์ของตัวล่าสุด (เช่น "WR") จนไปเขียนทับสถานะที่ถูกต้องอยู่แล้ว
+    const reqId = ++supervisorReqIdRef.current
     try {
       const res = await fetch(ESUMMARY_API_URL + '/account-lookup?initial=' + encodeURIComponent(initial))
       const data = await res.json()
+      if (reqId !== supervisorReqIdRef.current) return // มีการพิมพ์ต่อไปแล้ว ผลนี้เก่าเกินไป ไม่ต้องใช้
       if (data) setSupervisorName(data.fullName)
       else setSupervisorError('ไม่พบ Initial นี้')
     } catch {
+      if (reqId !== supervisorReqIdRef.current) return
       setSupervisorError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
     }
   }
