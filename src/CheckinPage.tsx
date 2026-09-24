@@ -54,10 +54,12 @@ function CheckinPage() {
   const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null)
 
   // อ่านรหัสหลุมจอดจาก URL เช่น ?qr=A3 (จากการสแกน QR Code จริง)
+  // ข้าม qr ที่มีเครื่องหมาย "-" เพราะนั่นคือ "หมายเลขห้องพนักงาน" ไม่ใช่หลุมจอดเครื่องบิน
+  // (แท็บ Check-in ต่างหากจะรับผิดชอบ qr แบบนั้นแทน กันข้อมูลไปโผล่ผิดแท็บ)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const qr = params.get('qr')
-    if (qr) setStandCode(qr.toUpperCase())
+    if (qr && !qr.includes('-')) setStandCode(qr.toUpperCase())
   }, [])
 
   // พอมีรหัสหลุมจอดแล้ว ลองตรวจ GPS ให้อัตโนมัติทันที

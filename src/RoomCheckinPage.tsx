@@ -36,10 +36,12 @@ function RoomCheckinPage({ myInitial, myFullName }: Props) {
   const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null)
 
   // อ่านหมายเลขห้องจาก URL เช่น ?qr=S1-G1-376-3 (จากการสแกน QR Code จริง)
+  // รับเฉพาะ qr ที่มีเครื่องหมาย "-" เพราะนั่นคือ "หมายเลขห้องพนักงาน"
+  // (ถ้าเป็น qr ของหลุมจอดเครื่องบิน ไม่มี "-" จะปล่อยให้แท็บ VTBS PBB CHECK จัดการแทน กันข้อมูลไปโผล่ผิดแท็บ)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const qr = params.get('qr')
-    if (qr) setRoomCode(qr.toUpperCase())
+    if (qr && qr.includes('-')) setRoomCode(qr.toUpperCase())
   }, [])
 
   // พอมีหมายเลขห้องแล้ว ลองตรวจ GPS ให้อัตโนมัติทันที
@@ -153,7 +155,7 @@ function RoomCheckinPage({ myInitial, myFullName }: Props) {
     <>
       <div style={{ padding: '0 12px', boxSizing: 'border-box' }}>
         <div style={{ maxWidth: 480, margin: '16px auto', background: '#fff', borderRadius: 12, padding: 20, boxSizing: 'border-box' }}>
-          <h2 style={{ color: '#000', textAlign: 'left', margin: '0 0 10px' }}>PBB ROOM CHECK</h2>
+          <h2 style={{ color: '#000', textAlign: 'left', margin: '0 0 10px' }}>Check-in</h2>
           <div style={{ textAlign: 'center', fontSize: 16, fontWeight: 700, color: '#3c4043' }}>{dateStr}</div>
           <div style={{ textAlign: 'center', fontSize: 16, fontWeight: 700, color: '#1a73e8', marginBottom: 12 }}>{timeStr}</div>
 

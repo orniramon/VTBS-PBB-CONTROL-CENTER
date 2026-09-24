@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import FitText from './FitText'
 
 const CHECKIN_API_URL = 'https://checkin-api.or-niramon.workers.dev'
-const HOURS_WINDOW = 24
+const HOURS_WINDOW = 18
 const DOUBLE_CLICK_MS = 400
 
 type RoomCheckinRecord = {
@@ -142,11 +142,11 @@ function RoomCheckinRecordPage({ role, myInitial, isActive }: Props) {
               borderRadius: '10px 10px 0 0',
             }}
           >
-            PBB Room Check Record
+            Check-in Record
           </div>
 
           <div style={{ background: '#fff', borderRadius: '0 0 10px 10px', border: '1px solid #eee', borderTop: 'none', overflow: 'hidden' }}>
-            <div style={{ maxHeight: 520, overflow: 'auto' }}>
+            <div style={{ maxHeight: 760, overflow: 'auto' }}>
               {/* ---------- หัวตาราง ---------- */}
               <div
                 style={{
@@ -211,12 +211,6 @@ function RoomCheckinRecordPage({ role, myInitial, isActive }: Props) {
               )}
             </div>
           </div>
-
-          {canManage && (
-            <div style={{ fontSize: 12, color: '#999', marginTop: 8, textAlign: 'center' }}>
-              * แตะแถว 2 ครั้งติดกัน เพื่อลบรายการ (เฉพาะ Apron/Supervisor)
-            </div>
-          )}
         </div>
       )}
 
