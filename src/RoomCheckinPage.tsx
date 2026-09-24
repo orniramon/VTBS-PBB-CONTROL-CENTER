@@ -28,8 +28,6 @@ function RoomCheckinPage({ myInitial, myFullName }: Props) {
   const [roomCode, setRoomCode] = useState('')
   const [gpsStatus, setGpsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [gpsMessage, setGpsMessage] = useState('')
-  const [lat, setLat] = useState<number | null>(null)
-  const [lng, setLng] = useState<number | null>(null)
 
   // ---------- ฟอร์ม ----------
   const [note, setNote] = useState('')
@@ -70,8 +68,6 @@ function RoomCheckinPage({ myInitial, myFullName }: Props) {
       async (pos) => {
         const newLat = pos.coords.latitude
         const newLng = pos.coords.longitude
-        setLat(newLat)
-        setLng(newLng)
 
         try {
           const res = await fetch(CHECKIN_API_URL + '/validate-room', {
