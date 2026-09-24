@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react'
 
-export const TABS = ['VTBS PBB CHECK', 'PBB Check Record', 'PBB Photo', 'PBB Operator', 'e-Summary'] as const
+export const TABS = [
+  'VTBS PBB CHECK',
+  'PBB Check Record',
+  'PBB Photo',
+  'PBB Operator',
+  'e-Summary',
+  'Check-in',
+  'Check-in Record',
+] as const
 export type TabName = (typeof TABS)[number]
 
 type Props = {

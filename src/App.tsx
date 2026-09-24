@@ -7,6 +7,8 @@ import CheckinPage from './CheckinPage'
 import CheckinRecordPage from './CheckinRecordPage'
 import PhotoPage from './PhotoPage'
 import EsummaryPage from './EsummaryPage'
+import RoomCheckinPage from './RoomCheckinPage'
+import RoomCheckinRecordPage from './RoomCheckinRecordPage'
 
 // TODO: เปลี่ยนเป็น URL ของ Cloudflare Worker "login" ที่ deploy ไว้จริง
 const WORKER_LOGIN_URL = 'https://login.or-niramon.workers.dev'
@@ -18,13 +20,23 @@ type Session = {
   expiry: number
 }
 
+// หมายเลขห้องพนักงานจะมีเครื่องหมาย "-" อยู่ในชื่อเสมอ (เช่น S1-G1-376-3)
+// ต่างจากหลุมจอดเครื่องบินที่ไม่มี "-" (เช่น A3, S105)
+// ใช้จุดสังเกตนี้ตัดสินว่าสแกน QR แล้วควรเปิดแท็บไหนให้อัตโนมัติ
+function initialTabFromQr(): TabName {
+  const params = new URLSearchParams(window.location.search)
+  const qr = params.get('qr')
+  if (qr && qr.includes('-')) return 'Check-in'
+  return 'VTBS PBB CHECK'
+}
+
 function App() {
   const [initial, setInitial] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
-  const [activeTab, setActiveTab] = useState<TabName>('VTBS PBB CHECK')
+  const [activeTab, setActiveTab] = useState<TabName>(initialTabFromQr)
 
   // ตอนเปิดหน้าเว็บ เช็คว่ามี session เก่าที่ยังไม่หมดอายุไหม (เหมือนระบบเดิม)
   useEffect(() => {
@@ -102,6 +114,12 @@ function App() {
         </div>
         <div style={{ display: activeTab === 'e-Summary' ? 'block' : 'none' }}>
           <EsummaryPage isActive={activeTab === 'e-Summary'} myInitial={session.initial} role={session.role} />
+        </div>
+        <div style={{ display: activeTab === 'Check-in' ? 'block' : 'none' }}>
+          <RoomCheckinPage myInitial={session.initial} myFullName={session.fullName} />
+        </div>
+        <div style={{ display: activeTab === 'Check-in Record' ? 'block' : 'none' }}>
+          <RoomCheckinRecordPage role={session.role} myInitial={session.initial} isActive={activeTab === 'Check-in Record'} />
         </div>
       </MainLayout>
     )
