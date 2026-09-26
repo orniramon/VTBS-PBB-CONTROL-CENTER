@@ -74,6 +74,14 @@ function fmtDateTimeShort(iso: string) {
   return `${d.toLocaleDateString('th-TH')} ${fmtTime(iso)}`
 }
 
+// แปลงวันที่ (YYYY-MM-DD) เป็นแบบไทย DD-MM-YYYY(พ.ศ.) เช่น 2026-09-26 -> 26-09-2569
+function fmtThaiDate(dateStr: string) {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-')
+  const be = Number(y) + 543
+  return `${d}-${m}-${be}`
+}
+
 function buildMergedRows(rows: CheckinRow[]): MergedRow[] {
   const arrSide = rows.filter((r) => r.serviceType === 'ARR' || r.serviceType === 'TOWING IN')
   const depSide = rows.filter((r) => r.serviceType === 'DEP' || r.serviceType === 'TOWING OUT')
@@ -510,7 +518,8 @@ function EsummaryPage({ isActive }: Props) {
           </div>
           {reportDate && timeRange && (
             <div style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
-              ช่วงกะ: {reportDate} {timeRange.split('-')[0]} — {getShiftBounds(reportDate, timeRange).endDateStr} {timeRange.split('-')[1]}
+              ช่วงกะ: {fmtThaiDate(reportDate)} {timeRange.split('-')[0]} — {fmtThaiDate(getShiftBounds(reportDate, timeRange).endDateStr)}{' '}
+              {timeRange.split('-')[1]}
             </div>
           )}
 
@@ -592,10 +601,16 @@ function EsummaryPage({ isActive }: Props) {
 
       {reportReady && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginTop: 16 }}>
-          <h2 style={{ textAlign: 'center', color: '#000' }}>VTBS PBB Operator Performance Report</h2>
-          <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 16 }}>
-            DATE {reportDate} &nbsp; TIME {timeRange} &nbsp; SHIFT {shiftNumber} &nbsp; CONCOURSE {concourse} &nbsp; ผช.หน.ชุด ประจำ Concourse{' '}
-            {supervisorName || '-'} ({supervisorInitial})
+          <div style={{ textAlign: 'center', color: '#000', marginBottom: 4 }}>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>VTBS PBB OPERATOR PERFORMANCE REPORT</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>รายงานการปฏิบัติงานขับเคลื่อนสะพานเทียบเครื่องบิน</div>
+            <div style={{ fontSize: 13, marginTop: 2 }}>
+              งานควบคุมสะพานเทียบเครื่องบิน ส่วนบริการเขตการบิน ฝ่ายปฏิบัติการเขตการบิน ท่าอากาศยานสุวรรณภูมิ
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 16, fontSize: 13 }}>
+            DATE {fmtThaiDate(reportDate)} &nbsp;&nbsp; TIME {timeRange} &nbsp;&nbsp; SHIFT {shiftNumber} &nbsp;&nbsp; Concourse {concourse} &nbsp;&nbsp;{' '}
+            ผช.หน.ชุด ประจำ Concourse {supervisorName || '-'} ({supervisorInitial})
           </div>
 
           {loading && <div style={{ textAlign: 'center', color: '#888' }}>กำลังโหลด...</div>}
@@ -609,10 +624,10 @@ function EsummaryPage({ isActive }: Props) {
                       No.
                     </th>
                     <th style={{ ...th, ...stickyRow, background: '#e6f4ea' }} colSpan={10}>
-                      ขาเข้า (ARR) และ เรียกเทียบ PBB (TOWING IN)
+                      เที่ยวบินขาเข้า (ARR) และ เรียกเทียบ PBB (TOWING IN)
                     </th>
                     <th style={{ ...th, ...stickyRow, background: '#fef7e0', borderLeft: '3px solid #000' }} colSpan={9}>
-                      ขาออก (DEP) และ เรียกถอย PBB (TOWING OUT)
+                      เที่ยวบินขาออก (DEP) และ เรียกถอย PBB (TOWING OUT)
                     </th>
                   </tr>
                   <tr>
@@ -625,7 +640,7 @@ function EsummaryPage({ isActive }: Props) {
                       A/C Reg.
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>
-                      ผู้เช็ค
+                      ชื่อผู้เซ็ค
                       <br />
                       เวลา PBB Check
                     </th>
@@ -650,9 +665,9 @@ function EsummaryPage({ isActive }: Props) {
                       เวลาเทียบ
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>
-                      ผู้ตรวจ (MIMIC)
+                      ชื่อผู้เซ็ต
                       <br />
-                      เวลาเช็ค
+                      MIMIC/AUTO LEVEL MODE
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33, borderLeft: '3px solid #000' }}>Flight No.</th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>หลุมจอด</th>
@@ -663,7 +678,7 @@ function EsummaryPage({ isActive }: Props) {
                       A/C Reg.
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>
-                      ผู้เช็ค
+                      ชื่อผู้เซ็ค
                       <br />
                       เวลา PBB Check
                     </th>
@@ -928,7 +943,7 @@ function EsummaryPage({ isActive }: Props) {
               {submitError && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{submitError}</div>}
 
               <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#fff', border: '1px solid #c5221f', color: '#c5221f', width: '100%', marginTop: 16 }}>
-                ลบ / เริ่มใหม่ (ยกเลิก e-Summary ที่กำลังทำอยู่นี้)
+                ลบ e-Summary
               </button>
             </div>
           )}
