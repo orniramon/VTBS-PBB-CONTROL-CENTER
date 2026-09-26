@@ -123,13 +123,21 @@ function personCell(initial: string | null | undefined, eventTime: string | null
   return { initial, time: fmtTime(eventTime) }
 }
 
+const CAN_MANAGE_ROLES = ['Apron', 'Supervisor']
+
 type Props = { isActive: boolean; myInitial: string; role: string }
 
-function EsummaryPage({ isActive }: Props) {
+function EsummaryPage({ isActive, role }: Props) {
+  const canManage = CAN_MANAGE_ROLES.includes(role)
+
   const [allConcourses, setAllConcourses] = useState<string[]>([])
   const [concourse, setConcourse] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [checkingActive, setCheckingActive] = useState(false)
+
+  const [viewingHistory, setViewingHistory] = useState(false)
+  const [historyList, setHistoryList] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   const [reportDate, setReportDate] = useState('')
   const [timeRange, setTimeRange] = useState('')
@@ -229,6 +237,44 @@ function EsummaryPage({ isActive }: Props) {
       })
       .catch(() => {})
       .finally(() => setCheckingActive(false))
+  }
+
+  // ----------------------------------------------------------------
+  // ดู e-Summary ย้อนหลัง (เฉพาะที่ submit แล้ว) ของ concourse ที่เลือกไว้ - read-only
+  // ----------------------------------------------------------------
+  function handleOpenHistory() {
+    if (!concourse) return
+    setViewingHistory(true)
+    setLoadingHistory(true)
+    fetch(ESUMMARY_API_URL + '/shift-list?' + new URLSearchParams({ concourse, limit: '30' }))
+      .then((res) => res.json())
+      .then((data) => setHistoryList(Array.isArray(data) ? data : []))
+      .catch(() => setHistoryList([]))
+      .finally(() => setLoadingHistory(false))
+  }
+
+  async function handleOpenHistoryItem(item: any) {
+    setSummaryId(item.id)
+    setReportDate(item.reportDate)
+    setTimeRange(item.timeRange)
+    setShiftNumber(item.shiftNumber)
+    setSupervisorInitial(item.supervisorInitial)
+    setSupervisorName(item.supervisorName || '')
+    setIsSubmitted(true)
+    setViewingHistory(false)
+    setLoading(true)
+    setReportReady(true)
+    try {
+      const rowsRes = await fetch(
+        ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse: concourse as string, from: item.firstFlightTime, to: item.lastFlightTime })
+      )
+      const rowsData = await rowsRes.json()
+      setRows(Array.isArray(rowsData) ? rowsData : [])
+    } catch {
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleCheckShift() {
@@ -396,6 +442,8 @@ function EsummaryPage({ isActive }: Props) {
 
   function resetAll() {
     setCreating(false)
+    setViewingHistory(false)
+    setHistoryList([])
     setReportReady(false)
     setIsSubmitted(false)
     setSummaryId('')
@@ -456,35 +504,83 @@ function EsummaryPage({ isActive }: Props) {
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box' }}>
       <label style={sectionLabelStyle}>Concourse</label>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16, maxWidth: 320 }}>
-        {allConcourses.map((c) => (
-          <button
-            key={c}
-            onClick={() => handleSelectConcourse(c)}
-            style={{
-              padding: '14px 20px',
-              borderRadius: 10,
-              border: concourse === c ? '2px solid #1a73e8' : '1px solid #ccc',
-              background: getConcourseColor(c),
-              color: '#000',
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontSize: 16,
-              textAlign: 'left',
-            }}
-          >
-            {c}
-          </button>
-        ))}
+      <div style={{ marginBottom: 16, maxWidth: 320 }}>
+        <select
+          value={concourse || ''}
+          onChange={(e) => {
+            if (e.target.value) handleSelectConcourse(e.target.value)
+          }}
+          style={{
+            width: '100%',
+            padding: '14px 20px',
+            borderRadius: 10,
+            border: concourse ? '2px solid #1a73e8' : '1px solid #ccc',
+            background: concourse ? getConcourseColor(concourse) : '#fff',
+            color: '#000',
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontSize: 16,
+            boxSizing: 'border-box',
+          }}
+        >
+          <option value="">-- เลือก Concourse --</option>
+          {allConcourses.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
       </div>
 
       {concourse && checkingActive && <div style={{ color: '#888', maxWidth: 480, margin: '0 auto' }}>กำลังตรวจสอบ...</div>}
 
-      {concourse && !checkingActive && !creating && !reportReady && (
-        <div style={{ maxWidth: 480, margin: '0 auto', textAlign: 'center' }}>
+      {concourse && !checkingActive && !creating && !reportReady && !viewingHistory && (
+        <div style={{ maxWidth: 480, margin: '0 auto', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button onClick={() => setCreating(true)} style={{ ...buttonStyle, background: '#1a73e8', color: '#fff' }}>
             Create e-Summary
           </button>
+          <button onClick={handleOpenHistory} style={{ ...buttonStyle, background: '#fff', border: '1px solid #1a73e8', color: '#1a73e8' }}>
+            ดู e-Summary ย้อนหลัง
+          </button>
+        </div>
+      )}
+
+      {concourse && viewingHistory && !reportReady && (
+        <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 480, margin: '16px auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <label style={{ ...labelStyle, margin: 0 }}>e-Summary ย้อนหลัง (Concourse {concourse})</label>
+            <button onClick={() => setViewingHistory(false)} style={{ ...buttonStyle, background: '#999', color: '#fff', padding: '6px 12px', fontSize: 13 }}>
+              ปิด
+            </button>
+          </div>
+          {loadingHistory ? (
+            <div style={{ color: '#888', textAlign: 'center', padding: 12 }}>กำลังโหลด...</div>
+          ) : historyList.length === 0 ? (
+            <div style={{ color: '#999', textAlign: 'center', padding: 12, fontSize: 14 }}>ยังไม่มี e-Summary ที่ Submit แล้วของ Concourse นี้</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {historyList.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => handleOpenHistoryItem(item)}
+                  style={{
+                    ...buttonStyle,
+                    textAlign: 'left',
+                    background: '#f0f4fa',
+                    border: '1px solid #ddd',
+                    color: '#000',
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    {fmtThaiDate(item.reportDate)} &nbsp; {item.timeRange} &nbsp; SHIFT {item.shiftNumber}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>
+                    ผช.หน.ชุด {item.supervisorName || '-'} ({item.supervisorInitial})
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -558,6 +654,11 @@ function EsummaryPage({ isActive }: Props) {
           >
             {checking ? 'กำลังตรวจสอบ...' : 'ถัดไป'}
           </button>
+          {(!reportDate || !timeRange || !shiftNumber || !supervisorInitial) && (
+            <div style={{ color: '#c5221f', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+              ⚠️ กรุณากรอกข้อมูลให้ครบทุกช่อง (วันที่/เวลา/ผลัด/ผช.หน.ชุด) ก่อนกดถัดไป
+            </div>
+          )}
         </div>
       )}
 
@@ -640,7 +741,7 @@ function EsummaryPage({ isActive }: Props) {
                       A/C Reg.
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>
-                      ชื่อผู้เซ็ค
+                      ชื่อผู้เช็ค
                       <br />
                       เวลา PBB Check
                     </th>
@@ -665,9 +766,9 @@ function EsummaryPage({ isActive }: Props) {
                       เวลาเทียบ
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>
-                      ชื่อผู้เซ็ต
+                      ชื่อผู้เช็ค/ เวลาเช็ค
                       <br />
-                      MIMIC/AUTO LEVEL MODE
+                      MIMIC/ AUTO LEVEL MODE
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33, borderLeft: '3px solid #000' }}>Flight No.</th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>หลุมจอด</th>
@@ -678,7 +779,7 @@ function EsummaryPage({ isActive }: Props) {
                       A/C Reg.
                     </th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>
-                      ชื่อผู้เซ็ค
+                      ชื่อผู้เช็ค
                       <br />
                       เวลา PBB Check
                     </th>
@@ -942,9 +1043,11 @@ function EsummaryPage({ isActive }: Props) {
               )}
               {submitError && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{submitError}</div>}
 
-              <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#fff', border: '1px solid #c5221f', color: '#c5221f', width: '100%', marginTop: 16 }}>
-                ลบ e-Summary
-              </button>
+              {canManage && (
+                <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#fff', border: '1px solid #c5221f', color: '#c5221f', width: '100%', marginTop: 16 }}>
+                  ลบ e-Summary
+                </button>
+              )}
             </div>
           )}
 
@@ -954,13 +1057,20 @@ function EsummaryPage({ isActive }: Props) {
                 ✓ e-Summary นี้ถูก Submit ไปแล้ว (แก้ไขไม่ได้ — ถ้าข้อมูลผิด ต้องลบแล้วสร้างใหม่)
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
-                  ลบ e-Summary นี้
-                </button>
+                {canManage && (
+                  <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
+                    ลบ e-Summary นี้
+                  </button>
+                )}
                 <button onClick={resetAll} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
                   ปิด
                 </button>
               </div>
+              {!canManage && (
+                <div style={{ fontSize: 12, color: '#999', textAlign: 'center', marginTop: 8 }}>
+                  * เฉพาะ Role Apron/Supervisor เท่านั้นที่ลบ e-Summary ได้
+                </div>
+              )}
             </div>
           )}
         </div>
