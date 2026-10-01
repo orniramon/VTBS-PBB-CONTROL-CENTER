@@ -26,6 +26,20 @@ type CheckinRow = {
 
 type MergedRow = { arr?: CheckinRow; dep?: CheckinRow }
 
+type SummaryInfo = {
+  id: string
+  concourse: string
+  reportDate: string
+  timeRange: string
+  shiftNumber: number
+  supervisorInitial: string
+  supervisorName: string | null
+  firstFlightTime: string
+  lastFlightTime: string
+  submittedAt: string
+  isSubmitted: boolean
+}
+
 const TIME_RANGES = ['08:00-17:00', '17:00-08:00']
 const SHIFT_NUMBERS = [1, 2, 3, 4]
 
@@ -43,26 +57,6 @@ function getConcourseColor(concourse: string) {
   if (CONCOURSE_COLORS[concourse]) return CONCOURSE_COLORS[concourse]
   const letter = concourse.replace(/[0-9]+$/, '')
   return CONCOURSE_COLORS[letter] || '#e0e0e0'
-}
-
-function toBangkokIso(dateStr: string, hh: number, mm: number) {
-  return `${dateStr}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+07:00`
-}
-
-function getShiftBounds(reportDate: string, timeRange: string) {
-  const [startStr, endStr] = timeRange.split('-')
-  const [sh, sm] = startStr.split(':').map(Number)
-  const [eh, em] = endStr.split(':').map(Number)
-  const start = new Date(toBangkokIso(reportDate, sh, sm))
-
-  let endDateStr = reportDate
-  if (eh <= sh) {
-    const d = new Date(reportDate + 'T00:00:00+07:00')
-    d.setDate(d.getDate() + 1)
-    endDateStr = d.toLocaleDateString('en-CA')
-  }
-  const end = new Date(toBangkokIso(endDateStr, eh, em))
-  return { start, end, endDateStr }
 }
 
 function fmtTime(iso: string | null) {
@@ -132,44 +126,35 @@ function EsummaryPage({ isActive, role }: Props) {
 
   const [allConcourses, setAllConcourses] = useState<string[]>([])
   const [concourse, setConcourse] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [checkingActive, setCheckingActive] = useState(false)
 
-  const [viewingHistory, setViewingHistory] = useState(false)
-  const [historyList, setHistoryList] = useState<any[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
+  // ----- รายการไฟลท์ที่ "รอสรุป" (ยังไม่ถูกรวมเข้า e-Summary ฉบับไหน) -----
+  const [pendingRows, setPendingRows] = useState<CheckinRow[]>([])
+  const [loadingPending, setLoadingPending] = useState(false)
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set())
 
+  // ----- ฟอร์มข้อมูลกะ (กรอกตอนจะ Submit เท่านั้น ไม่ต้องกรอกก่อนเห็นตาราง) -----
   const [reportDate, setReportDate] = useState('')
   const [timeRange, setTimeRange] = useState('')
   const [shiftNumber, setShiftNumber] = useState<number | null>(null)
   const [supervisorInitial, setSupervisorInitial] = useState('')
   const [supervisorName, setSupervisorName] = useState('')
   const [supervisorError, setSupervisorError] = useState('')
+  const supervisorReqIdRef = useRef(0)
 
-  const [checking, setChecking] = useState(false)
-
-  const [firstFlightCandidates, setFirstFlightCandidates] = useState<CheckinRow[]>([])
-  const [firstFlightId, setFirstFlightId] = useState('')
-  const [firstFlightTime, setFirstFlightTime] = useState('')
-  const [loadingCandidates, setLoadingCandidates] = useState(false)
-  const [candidatesChecked, setCandidatesChecked] = useState(false)
-  const [creatingDraft, setCreatingDraft] = useState(false)
-  const [createDraftError, setCreateDraftError] = useState('')
-
-  const [summaryId, setSummaryId] = useState('')
-  const [reportReady, setReportReady] = useState(false)
-  const [rows, setRows] = useState<CheckinRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [selectedRow, setSelectedRow] = useState<number | null>(null)
-
-  const [lastFlightId, setLastFlightId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [confirming, setConfirming] = useState(false)
 
-  const [isSubmitted, setIsSubmitted] = useState(false)
+  const [selectedRow, setSelectedRow] = useState<number | null>(null)
 
-  const supervisorReqIdRef = useRef(0)
+  // ----- ดู e-Summary ย้อนหลัง (read-only) -----
+  const [viewingHistoryList, setViewingHistoryList] = useState(false)
+  const [historyList, setHistoryList] = useState<SummaryInfo[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  const [viewSummary, setViewSummary] = useState<SummaryInfo | null>(null)
+  const [viewRows, setViewRows] = useState<CheckinRow[]>([])
+  const [loadingView, setLoadingView] = useState(false)
 
   useEffect(() => {
     fetch(CHECKIN_API_URL + '/stands')
@@ -180,28 +165,58 @@ function EsummaryPage({ isActive, role }: Props) {
       .catch(() => {})
   }, [])
 
-  // เมื่อแก้ไขข้อมูลในฟอร์ม (วันที่/เวลากะ/ผลัด/ผช.หน.ชุด) หลังจากเคยกด "ถัดไป" ไปแล้ว
-  // ให้รีเซ็ตสถานะ เพื่อให้กดถัดไปใหม่ได้อีกครั้ง (ปุ่มจะกลับมาเป็นสีปกติ ไม่เทาค้าง)
-  function resetCandidatesCheck() {
-    setCandidatesChecked(false)
-    setFirstFlightCandidates([])
-    setFirstFlightId('')
-    setCreateDraftError('')
+  function resetForm() {
+    setReportDate('')
+    setTimeRange('')
+    setShiftNumber(null)
+    setSupervisorInitial('')
+    setSupervisorName('')
+    setSupervisorError('')
+    setExcludedIds(new Set())
+    setSubmitError('')
+    setConfirming(false)
+    setSelectedRow(null)
   }
+
+  // ----------------------------------------------------------------
+  // เลือก Concourse -> โหลดไฟลท์ที่ "รอสรุป" ของ concourse นี้ขึ้นมาทันที
+  // ไม่ต้องกด Create ไม่ต้องเลือก First Flight อีกต่อไป
+  // ----------------------------------------------------------------
+  function handleSelectConcourse(c: string) {
+    setConcourse(c)
+    resetForm()
+    setViewingHistoryList(false)
+    setViewSummary(null)
+    setViewRows([])
+    loadPending(c)
+  }
+
+  function loadPending(c: string, silent?: boolean) {
+    if (!silent) setLoadingPending(true)
+    fetch(ESUMMARY_API_URL + '/pending-checkins?' + new URLSearchParams({ concourse: c }))
+      .then((res) => res.json())
+      .then((data) => setPendingRows(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoadingPending(false))
+  }
+
+  useEffect(() => {
+    if (!concourse || viewSummary || viewingHistoryList || !isActive) return
+    const timer = setInterval(() => loadPending(concourse, true), 10000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [concourse, viewSummary, viewingHistoryList, isActive])
 
   async function lookupSupervisor(initial: string) {
     setSupervisorInitial(initial)
     setSupervisorName('')
     setSupervisorError('')
-    resetCandidatesCheck()
     if (!initial) return
-    // กันปัญหาพิมพ์เร็ว แล้วผลลัพธ์ของตัวอักษรก่อนหน้า (เช่น "W") มาถึงช้ากว่า
-    // ผลลัพธ์ของตัวล่าสุด (เช่น "WR") จนไปเขียนทับสถานะที่ถูกต้องอยู่แล้ว
     const reqId = ++supervisorReqIdRef.current
     try {
       const res = await fetch(ESUMMARY_API_URL + '/account-lookup?initial=' + encodeURIComponent(initial))
       const data = await res.json()
-      if (reqId !== supervisorReqIdRef.current) return // มีการพิมพ์ต่อไปแล้ว ผลนี้เก่าเกินไป ไม่ต้องใช้
+      if (reqId !== supervisorReqIdRef.current) return
       if (data) setSupervisorName(data.fullName)
       else setSupervisorError('ไม่พบ Initial นี้ หรือไม่ใช่ Role PBB Operator')
     } catch {
@@ -211,40 +226,27 @@ function EsummaryPage({ isActive, role }: Props) {
   }
 
   // ----------------------------------------------------------------
-  // กดปุ่มเลือก Concourse -> เช็คก่อนว่ามีคนสร้าง e-Summary ของ concourse
-  // นี้ค้างอยู่ (ยังไม่ submit) หรือไม่ ถ้ามีให้โหลดเข้ามาแสดงเลยทันที
-  // ไม่ต้องกรอกวันที่/เวลา/ผลัด/ชื่อผช.หน.ชุด ซ้ำ
+  // ติ๊ก/ติ๊กออก เป็นรายไฟลท์ "แยกฝั่ง ARR และ DEP อิสระจากกัน" เพราะบางครั้ง
+  // ขาเข้า (ARR) เป็นของผลัดหนึ่ง แต่ขาออก (DEP) ของเครื่องบินลำเดียวกันกลับ
+  // เป็นของอีกผลัดนึง (คนละช่วงเวลา คนละคนรับผิดชอบ) จึงต้องแยกติ๊กคนละช่อง
+  // ค่าเริ่มต้นคือติ๊กไว้ทุกแถว (รวมหมด) ใช้ติ๊กออกเฉพาะไฟลท์ที่ไม่ใช่ของกะนี้
   // ----------------------------------------------------------------
-  function handleSelectConcourse(c: string) {
-    setConcourse(c)
-    resetAll()
-    setCheckingActive(true)
-    fetch(ESUMMARY_API_URL + '/draft-active?concourse=' + encodeURIComponent(c))
-      .then((res) => res.json())
-      .then((data) => {
-        if (data) {
-          setSummaryId(data.id)
-          setReportDate(data.reportDate)
-          setTimeRange(data.timeRange)
-          setShiftNumber(data.shiftNumber)
-          setSupervisorInitial(data.supervisorInitial)
-          setSupervisorName(data.supervisorName || '')
-          setFirstFlightId(data.firstFlightCheckinId)
-          setFirstFlightTime(data.firstFlightTime)
-          setIsSubmitted(false)
-          setReportReady(true)
-        }
-      })
-      .catch(() => {})
-      .finally(() => setCheckingActive(false))
+  function toggleChecking(checkinId: string | undefined) {
+    if (!checkinId) return
+    setExcludedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(checkinId)) next.delete(checkinId)
+      else next.add(checkinId)
+      return next
+    })
   }
 
   // ----------------------------------------------------------------
-  // ดู e-Summary ย้อนหลัง (เฉพาะที่ submit แล้ว) ของ concourse ที่เลือกไว้ - read-only
+  // ดู e-Summary ย้อนหลัง (เฉพาะที่ submit แล้ว) ของ concourse ที่เลือกไว้
   // ----------------------------------------------------------------
-  function handleOpenHistory() {
+  function handleOpenHistoryList() {
     if (!concourse) return
-    setViewingHistory(true)
+    setViewingHistoryList(true)
     setLoadingHistory(true)
     fetch(ESUMMARY_API_URL + '/shift-list?' + new URLSearchParams({ concourse, limit: '30' }))
       .then((res) => res.json())
@@ -253,114 +255,68 @@ function EsummaryPage({ isActive, role }: Props) {
       .finally(() => setLoadingHistory(false))
   }
 
-  async function handleOpenHistoryItem(item: any) {
-    setSummaryId(item.id)
-    setReportDate(item.reportDate)
-    setTimeRange(item.timeRange)
-    setShiftNumber(item.shiftNumber)
-    setSupervisorInitial(item.supervisorInitial)
-    setSupervisorName(item.supervisorName || '')
-    setIsSubmitted(true)
-    setViewingHistory(false)
-    setLoading(true)
-    setReportReady(true)
-    try {
-      const rowsRes = await fetch(
-        ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse: concourse as string, from: item.firstFlightTime, to: item.lastFlightTime })
-      )
-      const rowsData = await rowsRes.json()
-      setRows(Array.isArray(rowsData) ? rowsData : [])
-    } catch {
-      setRows([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleCheckShift() {
-    if (!concourse || !reportDate || !timeRange || !shiftNumber || !supervisorInitial) return
-    setChecking(true)
-    try {
-      const params = new URLSearchParams({ concourse, reportDate, timeRange, shiftNumber: String(shiftNumber) })
-      const res = await fetch(ESUMMARY_API_URL + '/shift-lookup?' + params.toString())
-      const data = await res.json()
-      if (data && data.isSubmitted) {
-        // กะนี้ถูก submit ไปแล้ว - เปิดดูแบบอ่านอย่างเดียว
-        setSummaryId(data.id)
-        setReportDate(data.reportDate)
-        setTimeRange(data.timeRange)
-        setShiftNumber(data.shiftNumber)
-        setSupervisorInitial(data.supervisorInitial)
-        setSupervisorName(data.supervisorName || '')
-        setIsSubmitted(true)
-        setLoading(true)
-        const rowsRes = await fetch(
-          ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse, from: data.firstFlightTime, to: data.lastFlightTime })
-        )
-        const rowsData = await rowsRes.json()
-        setRows(Array.isArray(rowsData) ? rowsData : [])
-        setLoading(false)
-        setReportReady(true)
-      } else {
-        await loadFirstFlightCandidates()
-      }
-    } catch {
-      setSubmitError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
-    } finally {
-      setChecking(false)
-    }
-  }
-
-  async function loadFirstFlightCandidates() {
-    if (!concourse || !reportDate || !timeRange) return
-    const { start } = getShiftBounds(reportDate, timeRange)
-    const windowStart = new Date(start.getTime() - 45 * 60 * 1000)
-    setLoadingCandidates(true)
-    setCandidatesChecked(false)
-    try {
-      const res = await fetch(
-        ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse, from: windowStart.toISOString(), to: start.toISOString() })
-      )
-      const data = await res.json()
-      setFirstFlightCandidates(Array.isArray(data) ? data : [])
-    } catch {
-      setFirstFlightCandidates([])
-    } finally {
-      setLoadingCandidates(false)
-      setCandidatesChecked(true)
-    }
-  }
-
-  function loadLiveRows(silent?: boolean) {
-    if (!concourse || !firstFlightTime) return
-    if (!silent) setLoading(true)
-    const windowEnd = new Date(Date.now() + 60 * 60 * 1000)
-    fetch(ESUMMARY_API_URL + '/checkins-range?' + new URLSearchParams({ concourse, from: firstFlightTime, to: windowEnd.toISOString() }))
+  function handleOpenHistoryItem(item: SummaryInfo) {
+    setViewingHistoryList(false)
+    setLoadingView(true)
+    fetch(ESUMMARY_API_URL + '/esummary-view?' + new URLSearchParams({ esummaryId: item.id }))
       .then((res) => res.json())
       .then((data) => {
-        setRows(Array.isArray(data) ? data : [])
-        setLoading(false)
+        setViewSummary(data.summary)
+        setViewRows(Array.isArray(data.rows) ? data.rows : [])
       })
-      .catch(() => setLoading(false))
+      .catch(() => {})
+      .finally(() => setLoadingView(false))
   }
 
-  useEffect(() => {
-    if (!reportReady || isSubmitted || !isActive) return
-    loadLiveRows()
-    // โพลข้อมูลแบบเงียบๆ (ไม่เปิด "กำลังโหลด..." ทุกรอบ) กันหน้าจอกระพริบ
-    const timer = setInterval(() => loadLiveRows(true), 10000)
-    return () => clearInterval(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportReady, isSubmitted, isActive, firstFlightTime])
+  function handleCloseView() {
+    setViewSummary(null)
+    setViewRows([])
+    if (concourse) loadPending(concourse)
+  }
 
-  async function handleConfirmFirstFlight() {
-    if (!firstFlightId || !concourse) return
-    const flight = firstFlightCandidates.find((r) => r.checkinId === firstFlightId)
-    if (!flight) return
-    setCreatingDraft(true)
-    setCreateDraftError('')
+  async function handleDeleteSummary() {
+    if (!viewSummary) return
+    if (!confirm('ยืนยันการลบ e-Summary นี้? ไฟลท์ในฉบับนี้จะกลับไปเป็น "รอสรุป" ทันที')) return
+    await fetch(ESUMMARY_API_URL + '/shift-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: viewSummary.id }),
+    })
+    handleCloseView()
+  }
+
+  // แถวที่ "รวม" เข้า e-Summary ฉบับที่จะ submit (ยังไม่ถูกติ๊กออก)
+  const includedRows = pendingRows.filter((r) => !excludedIds.has(r.checkinId))
+  const includedMergedRows = buildMergedRows(includedRows)
+
+  async function handleSubmit() {
+    setSubmitError('')
+    if (!reportDate || !timeRange || !shiftNumber || !supervisorInitial) {
+      return setSubmitError('⚠️ กรุณากรอกข้อมูลให้ครบทุกช่อง (วันที่/เวลา/ผลัด/ผช.หน.ชุด)')
+    }
+    if (includedRows.length === 0) {
+      return setSubmitError('⚠️ ยังไม่มีไฟลท์ที่เลือกไว้สำหรับ e-Summary ฉบับนี้ (ไฟลท์ถูกติ๊กออกหมด)')
+    }
+    const incomplete = includedMergedRows.find((m) => {
+      const checkSide = (r?: CheckinRow) => {
+        if (!r) return false
+        if (!r.initialL1) return false
+        return !r.l1EventTime
+      }
+      return checkSide(m.arr) || checkSide(m.dep)
+    })
+    if (incomplete) {
+      const fn = incomplete.arr?.flightNo || incomplete.dep?.flightNo || ''
+      return setSubmitError(`⚠️ ส่ง e-Summary ไม่สำเร็จ ใส่เวลา (เทียบ)/(ถอย) ไม่ครบ Flight No. ${fn}`)
+    }
+    setConfirming(true)
+  }
+
+  async function handleConfirmSubmit() {
+    setSubmitting(true)
+    setSubmitError('')
     try {
-      const res = await fetch(ESUMMARY_API_URL + '/shift-create-draft', {
+      const res = await fetch(ESUMMARY_API_URL + '/esummary-submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -370,117 +326,30 @@ function EsummaryPage({ isActive, role }: Props) {
           shiftNumber,
           supervisorInitial,
           supervisorName,
-          firstFlightCheckinId: firstFlightId,
+          checkinIds: includedRows.map((r) => r.checkinId),
         }),
       })
       const data = await res.json()
       if (data.success) {
-        setSummaryId(data.id)
-        setFirstFlightTime(flight.createdAt)
-        setIsSubmitted(false)
-        setReportReady(true)
-      } else {
-        setCreateDraftError(data.message || 'สร้าง e-Summary ไม่สำเร็จ (อาจมีคนอื่นสร้างของ concourse นี้ไปพร้อมกัน ลองกดเลือก Concourse ใหม่อีกครั้ง)')
-      }
-    } catch {
-      setCreateDraftError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
-    } finally {
-      setCreatingDraft(false)
-    }
-  }
-
-  async function handleSubmitSummary() {
-    setSubmitError('')
-    if (!lastFlightId) return setSubmitError('กรุณาเลือกไฟลท์สุดท้ายของกะนี้')
-    // ตรวจว่าทุกไฟลท์ในตาราง มีการกรอกเวลาเทียบ/เวลาถอย ครบตามที่ต้องมีหรือยัง
-    const incomplete = mergedRows.find((m) => {
-      const checkSide = (r?: CheckinRow) => {
-        if (!r) return false
-        if (!r.initialL1) return false // ยังไม่มีข้อมูล L1 เลย ไม่ต้องเช็ค (แปลว่าไม่มีการใช้สะพานฝั่งนี้)
-        return !r.l1EventTime
-      }
-      return checkSide(m.arr) || checkSide(m.dep)
-    })
-    if (incomplete) {
-      const fn = incomplete.arr?.flightNo || incomplete.dep?.flightNo || ''
-      return setSubmitError(`ส่ง e-Summary ไม่สำเร็จ ใส่เวลา (เทียบ)/(ถอย) ไม่ครบ Flight No. ${fn}`)
-    }
-    setSubmitting(true)
-    try {
-      const res = await fetch(ESUMMARY_API_URL + '/shift-submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: summaryId, lastFlightCheckinId: lastFlightId }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        resetAll()
+        resetForm()
+        if (concourse) loadPending(concourse)
       } else {
         setSubmitError(data.message || 'ส่งไม่สำเร็จ')
+        setConfirming(false)
       }
     } catch {
       setSubmitError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
+      setConfirming(false)
     } finally {
       setSubmitting(false)
-      setConfirming(false)
     }
   }
 
-  async function handleDeleteSummary() {
-    if (!summaryId) return
-    const msg = isSubmitted
-      ? 'ยืนยันการลบ e-Summary นี้? ไฟลท์ในช่วงนี้จะกลับไปเป็น "ยังไม่ถูกสรุป" ทันที'
-      : 'ยืนยันการยกเลิก e-Summary ที่กำลังทำอยู่นี้? (ใช้เมื่อกรอก วันที่/เวลา/ผลัด/ชื่อผช.หน.ชุด หรือเลือก First Flight ผิด)'
-    if (!confirm(msg)) return
-    await fetch(ESUMMARY_API_URL + '/shift-delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: summaryId }),
-    })
-    resetAll()
-  }
-
-  function resetAll() {
-    setCreating(false)
-    setViewingHistory(false)
-    setHistoryList([])
-    setReportReady(false)
-    setIsSubmitted(false)
-    setSummaryId('')
-    setReportDate('')
-    setTimeRange('')
-    setShiftNumber(null)
-    setSupervisorInitial('')
-    setSupervisorName('')
-    setSupervisorError('')
-    setFirstFlightCandidates([])
-    setFirstFlightId('')
-    setFirstFlightTime('')
-    setCandidatesChecked(false)
-    setCreateDraftError('')
-    setLastFlightId('')
-    setRows([])
-    setSelectedRow(null)
-    setSubmitError('')
-    setConfirming(false)
-  }
-
-  const { end: shiftEnd } = reportDate && timeRange ? getShiftBounds(reportDate, timeRange) : { end: null as unknown as Date }
-  const lastFlightCandidates =
-    shiftEnd && rows.length > 0
-      ? rows.filter((r) => {
-          const t = new Date(r.createdAt).getTime()
-          return t >= shiftEnd.getTime() - 45 * 60 * 1000 && t <= shiftEnd.getTime() + 45 * 60 * 1000
-        })
-      : []
-
-  const boundedRows = isSubmitted
-    ? rows
-    : lastFlightId
-      ? rows.filter((r) => new Date(r.createdAt).getTime() <= new Date(rows.find((x) => x.checkinId === lastFlightId)?.createdAt || 0).getTime())
-      : rows
-
-  const mergedRows = buildMergedRows(boundedRows)
+  // ---- ตารางที่แสดงอยู่ตอนนี้: ถ้ากำลังดูฉบับเก่า ใช้ viewRows / ไม่งั้นใช้ pendingRows ----
+  const displayRows = viewSummary ? viewRows : pendingRows
+  const mergedRows = buildMergedRows(displayRows)
+  const isSubmitted = !!viewSummary
+  const countRows = viewSummary ? viewRows : includedRows
 
   const opCounts: Record<string, { dock: number; push: number }> = {}
   function bump(initial: string | null | undefined, field: 'dock' | 'push') {
@@ -488,7 +357,7 @@ function EsummaryPage({ isActive, role }: Props) {
     if (!opCounts[initial]) opCounts[initial] = { dock: 0, push: 0 }
     opCounts[initial][field]++
   }
-  boundedRows.forEach((r) => {
+  countRows.forEach((r) => {
     const isDock = r.serviceType === 'ARR' || r.serviceType === 'TOWING IN'
     const field = isDock ? 'dock' : 'push'
     if (r.l1EventTime) bump(r.initialL1, field)
@@ -499,7 +368,11 @@ function EsummaryPage({ isActive, role }: Props) {
   const totalDock = opInitials.reduce((s, k) => s + opCounts[k].dock, 0)
   const totalPush = opInitials.reduce((s, k) => s + opCounts[k].push, 0)
 
-  const nextDisabled = !reportDate || !timeRange || !shiftNumber || !supervisorInitial || checking || candidatesChecked
+  const headerReportDate = viewSummary ? viewSummary.reportDate : reportDate
+  const headerTimeRange = viewSummary ? viewSummary.timeRange : timeRange
+  const headerShiftNumber = viewSummary ? viewSummary.shiftNumber : shiftNumber
+  const headerSupervisorName = viewSummary ? viewSummary.supervisorName : supervisorName
+  const headerSupervisorInitial = viewSummary ? viewSummary.supervisorInitial : supervisorInitial
 
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box' }}>
@@ -532,24 +405,19 @@ function EsummaryPage({ isActive, role }: Props) {
         </select>
       </div>
 
-      {concourse && checkingActive && <div style={{ color: '#888', maxWidth: 480, margin: '0 auto' }}>กำลังตรวจสอบ...</div>}
-
-      {concourse && !checkingActive && !creating && !reportReady && !viewingHistory && (
-        <div style={{ maxWidth: 480, margin: '0 auto', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button onClick={() => setCreating(true)} style={{ ...buttonStyle, background: '#1a73e8', color: '#fff' }}>
-            Create e-Summary
-          </button>
-          <button onClick={handleOpenHistory} style={{ ...buttonStyle, background: '#fff', border: '1px solid #1a73e8', color: '#1a73e8' }}>
+      {concourse && !viewingHistoryList && !viewSummary && (
+        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <button onClick={handleOpenHistoryList} style={{ ...buttonStyle, background: '#fff', border: '1px solid #1a73e8', color: '#1a73e8', padding: '8px 16px' }}>
             ดู e-Summary ย้อนหลัง
           </button>
         </div>
       )}
 
-      {concourse && viewingHistory && !reportReady && (
+      {concourse && viewingHistoryList && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 480, margin: '16px auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <label style={{ ...labelStyle, margin: 0 }}>e-Summary ย้อนหลัง (Concourse {concourse})</label>
-            <button onClick={() => setViewingHistory(false)} style={{ ...buttonStyle, background: '#999', color: '#fff', padding: '6px 12px', fontSize: 13 }}>
+            <button onClick={() => setViewingHistoryList(false)} style={{ ...buttonStyle, background: '#999', color: '#fff', padding: '6px 12px', fontSize: 13 }}>
               ปิด
             </button>
           </div>
@@ -563,13 +431,7 @@ function EsummaryPage({ isActive, role }: Props) {
                 <button
                   key={item.id}
                   onClick={() => handleOpenHistoryItem(item)}
-                  style={{
-                    ...buttonStyle,
-                    textAlign: 'left',
-                    background: '#f0f4fa',
-                    border: '1px solid #ddd',
-                    color: '#000',
-                  }}
+                  style={{ ...buttonStyle, textAlign: 'left', background: '#f0f4fa', border: '1px solid #ddd', color: '#000' }}
                 >
                   <div style={{ fontWeight: 700 }}>
                     {fmtThaiDate(item.reportDate)} &nbsp; {item.timeRange} &nbsp; SHIFT {item.shiftNumber}
@@ -584,124 +446,10 @@ function EsummaryPage({ isActive, role }: Props) {
         </div>
       )}
 
-      {concourse && creating && !reportReady && (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 480, margin: '16px auto' }}>
-          <label style={labelStyle}>วันที่เริ่มกะ</label>
-          <input
-            type="date"
-            value={reportDate}
-            onChange={(e) => {
-              setReportDate(e.target.value)
-              resetCandidatesCheck()
-            }}
-            style={dateTimeInputStyle}
-          />
+      {concourse && loadingView && <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>กำลังโหลด...</div>}
 
-          <label style={labelStyle}>TIME</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {TIME_RANGES.map((t) => (
-              <button
-                key={t}
-                onClick={() => {
-                  setTimeRange(t)
-                  resetCandidatesCheck()
-                }}
-                style={{ ...toggleStyle, background: timeRange === t ? '#1a73e8' : '#fff', color: timeRange === t ? '#fff' : '#000' }}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          {reportDate && timeRange && (
-            <div style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
-              ช่วงกะ: {fmtThaiDate(reportDate)} {timeRange.split('-')[0]} — {fmtThaiDate(getShiftBounds(reportDate, timeRange).endDateStr)}{' '}
-              {timeRange.split('-')[1]}
-            </div>
-          )}
-
-          <label style={labelStyle}>SHIFT</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {SHIFT_NUMBERS.map((n) => (
-              <button
-                key={n}
-                onClick={() => {
-                  setShiftNumber(n)
-                  resetCandidatesCheck()
-                }}
-                style={{ ...toggleStyle, background: shiftNumber === n ? '#1a73e8' : '#fff', color: shiftNumber === n ? '#fff' : '#000' }}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-
-          <label style={labelStyle}>ผช.หน.ชุด ประจำ Concourse (Initial)</label>
-          <input type="text" value={supervisorInitial} onChange={(e) => lookupSupervisor(e.target.value.toUpperCase())} style={inputStyle} />
-          {supervisorName && <div style={{ color: '#137333', fontSize: 13, marginTop: 4 }}>{supervisorName}</div>}
-          {supervisorError && <div style={{ color: '#c5221f', fontSize: 13, marginTop: 4 }}>{supervisorError}</div>}
-
-          <button
-            onClick={handleCheckShift}
-            disabled={nextDisabled}
-            style={{
-              ...buttonStyle,
-              background: nextDisabled ? '#ccc' : '#34a853',
-              color: '#fff',
-              width: '100%',
-              marginTop: 16,
-              cursor: nextDisabled ? 'default' : 'pointer',
-            }}
-          >
-            {checking ? 'กำลังตรวจสอบ...' : 'ถัดไป'}
-          </button>
-          {(!reportDate || !timeRange || !shiftNumber || !supervisorInitial) && (
-            <div style={{ color: '#c5221f', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-              ⚠️ กรุณากรอกข้อมูลให้ครบทุกช่อง (วันที่/เวลา/ผลัด/ผช.หน.ชุด) ก่อนกดถัดไป
-            </div>
-          )}
-        </div>
-      )}
-
-      {concourse && creating && !reportReady && candidatesChecked && (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 480, margin: '16px auto' }}>
-          <label style={labelStyle}>Choose First Flight *</label>
-          {loadingCandidates ? (
-            <div style={{ color: '#888' }}>กำลังโหลด...</div>
-          ) : firstFlightCandidates.length === 0 ? (
-            <div style={{ background: '#fce8e6', border: '1px solid #c5221f', borderRadius: 8, padding: 12, fontSize: 13, color: '#c5221f' }}>
-              ไม่พบไฟลท์ที่เชคอินในช่วง{' '}
-              {reportDate && timeRange && (
-                <>
-                  {fmtDateTimeShort(new Date(getShiftBounds(reportDate, timeRange).start.getTime() - 45 * 60 * 1000).toISOString())} —{' '}
-                  {fmtDateTimeShort(getShiftBounds(reportDate, timeRange).start.toISOString())}
-                </>
-              )}
-              <br />
-              (ต้องมีการเชคอินผ่านหน้า VTBS PBB CHECK จริงในช่วงนี้ก่อน ถึงจะเลือกเป็น First Flight ได้)
-            </div>
-          ) : (
-            <select value={firstFlightId} onChange={(e) => setFirstFlightId(e.target.value)} style={inputStyle}>
-              <option value="">-- เลือกไฟลท์แรกของกะ --</option>
-              {firstFlightCandidates.map((r) => (
-                <option key={r.checkinId} value={r.checkinId}>
-                  {fmtDateTimeShort(r.createdAt)} — {r.flightNo} ({r.serviceType})
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            onClick={handleConfirmFirstFlight}
-            disabled={!firstFlightId || creatingDraft}
-            style={{ ...buttonStyle, background: !firstFlightId || creatingDraft ? '#ccc' : '#34a853', color: '#fff', width: '100%', marginTop: 12 }}
-          >
-            {creatingDraft ? 'กำลังสร้าง...' : 'Create e-Summary'}
-          </button>
-          {createDraftError && <div style={{ color: '#c5221f', fontSize: 13, marginTop: 8 }}>{createDraftError}</div>}
-        </div>
-      )}
-
-      {reportReady && (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginTop: 16 }}>
+      {concourse && !viewingHistoryList && !loadingView && (viewSummary || !loadingPending) && (
+        <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginTop: 8 }}>
           <div style={{ textAlign: 'center', color: '#000', marginBottom: 4 }}>
             <div style={{ fontWeight: 800, fontSize: 18 }}>VTBS PBB OPERATOR PERFORMANCE REPORT</div>
             <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>รายงานการปฏิบัติงานขับเคลื่อนสะพานเทียบเครื่องบิน</div>
@@ -709,25 +457,44 @@ function EsummaryPage({ isActive, role }: Props) {
               งานควบคุมสะพานเทียบเครื่องบิน ส่วนบริการเขตการบิน ฝ่ายปฏิบัติการเขตการบิน ท่าอากาศยานสุวรรณภูมิ
             </div>
           </div>
-          <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 16, fontSize: 13 }}>
-            DATE {fmtThaiDate(reportDate)} &nbsp;&nbsp; TIME {timeRange} &nbsp;&nbsp; SHIFT {shiftNumber} &nbsp;&nbsp; Concourse {concourse} &nbsp;&nbsp;{' '}
-            ผช.หน.ชุด ประจำ Concourse {supervisorName || '-'} ({supervisorInitial})
+          <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 8, fontSize: 13 }}>
+            DATE {headerReportDate ? fmtThaiDate(headerReportDate) : '…'} &nbsp;&nbsp; TIME {headerTimeRange || '…'} &nbsp;&nbsp; SHIFT {headerShiftNumber || '…'}{' '}
+            &nbsp;&nbsp; Concourse {concourse} &nbsp;&nbsp; ผช.หน.ชุด ประจำ Concourse {headerSupervisorName || '-'} ({headerSupervisorInitial || '-'})
           </div>
 
-          {loading && <div style={{ textAlign: 'center', color: '#888' }}>กำลังโหลด...</div>}
+          {!isSubmitted && (
+            <div style={{ textAlign: 'center', color: '#1a73e8', fontSize: 12, marginBottom: 12 }}>
+              ตารางด้านล่างคือไฟลท์ที่ "รอสรุป" ทั้งหมดของ Concourse นี้ (ยังไม่ถูกรวมเข้า e-Summary ฉบับไหน) — ค่าเริ่มต้นติ๊กรวมไว้ทุกแถว
+              ถ้ามีไฟลท์ของกะถัดไปปนมา (เช่น มาเปลี่ยนกะเร็ว) ให้ติ๊กออกได้เลย ไฟลท์ที่ติ๊กออกจะรอรวมกับฉบับถัดไปให้เอง
+            </div>
+          )}
 
           <div style={{ maxHeight: '70vh', overflow: 'auto', border: '1px solid #ddd' }}>
-            <div style={{ minWidth: 1700 }}>
+            <div style={{ minWidth: isSubmitted ? 1700 : 1800 }}>
               <table style={reportTableStyle}>
                 <thead>
                   <tr>
                     <th style={{ ...th, ...stickyCol, ...stickyRow, zIndex: 3 }} rowSpan={2}>
                       No.
                     </th>
+                    {!isSubmitted && (
+                      <th style={{ ...th, ...stickyRow, background: '#e6f4ea' }} rowSpan={2}>
+                        Choose
+                        <br />
+                        Flt.
+                      </th>
+                    )}
                     <th style={{ ...th, ...stickyRow, background: '#e6f4ea' }} colSpan={10}>
                       เที่ยวบินขาเข้า (ARR) และ เรียกเทียบ PBB (TOWING IN)
                     </th>
-                    <th style={{ ...th, ...stickyRow, background: '#fef7e0', borderLeft: '3px solid #000' }} colSpan={9}>
+                    {!isSubmitted && (
+                      <th style={{ ...th, ...stickyRow, background: '#fef7e0' }} rowSpan={2}>
+                        Choose
+                        <br />
+                        Flt.
+                      </th>
+                    )}
+                    <th style={{ ...th, ...stickyRow, background: '#fef7e0', borderLeft: isSubmitted ? '3px solid #000' : 'none' }} colSpan={9}>
                       เที่ยวบินขาออก (DEP) และ เรียกถอย PBB (TOWING OUT)
                     </th>
                   </tr>
@@ -806,15 +573,40 @@ function EsummaryPage({ isActive, role }: Props) {
                   </tr>
                 </thead>
                 <tbody>
+                  {mergedRows.length === 0 && (
+                    <tr>
+                      <td colSpan={isSubmitted ? 20 : 22} style={{ ...td, color: '#999', padding: 20 }}>
+                        {isSubmitted ? 'ไม่มีข้อมูล' : 'ยังไม่มีไฟลท์ที่รอสรุปของ Concourse นี้'}
+                      </td>
+                    </tr>
+                  )}
                   {mergedRows.map((m, i) => {
                     const a = m.arr
                     const d = m.dep
                     const mim = mimicInfo(a)
+                    // ARR และ DEP ติ๊กรวม/ติ๊กออกอิสระจากกัน (เผื่อกรณีขาเข้า-ขาออกของเครื่องบิน
+                    // ลำเดียวกัน คาบเกี่ยวกันคนละผลัด)
+                    const arrIncluded = !a || !excludedIds.has(a.checkinId)
+                    const depIncluded = !d || !excludedIds.has(d.checkinId)
                     const rowBg = selectedRow === i ? '#fff6c9' : i % 2 === 0 ? '#fff' : '#fafafa'
+                    const arrDim = !isSubmitted && a && !arrIncluded ? { opacity: 0.45 } : undefined
+                    const depDim = !isSubmitted && d && !depIncluded ? { opacity: 0.45 } : undefined
                     return (
                       <tr key={i} onClick={() => setSelectedRow(selectedRow === i ? null : i)} style={{ cursor: 'pointer' }}>
                         <td style={{ ...td, ...stickyCol, background: rowBg, fontWeight: 600 }}>{i + 1}</td>
-                        <td style={{ ...td, background: rowBg }}>
+                        {!isSubmitted && (
+                          <td style={{ ...td, background: rowBg }} onClick={(e) => e.stopPropagation()}>
+                            {a && (
+                              <input
+                                type="checkbox"
+                                checked={arrIncluded}
+                                onChange={() => toggleChecking(a.checkinId)}
+                                style={{ width: 18, height: 18, cursor: 'pointer' }}
+                              />
+                            )}
+                          </td>
+                        )}
+                        <td style={{ ...td, background: rowBg, ...arrDim }}>
                           {a ? (
                             <>
                               {a.flightNo}
@@ -824,9 +616,9 @@ function EsummaryPage({ isActive, role }: Props) {
                             '-'
                           )}
                         </td>
-                        <td style={{ ...td, background: rowBg }}>{a ? a.stand : '-'}</td>
-                        <td style={{ ...td, background: rowBg }}>{a ? (a.serviceType === 'TOWING IN' ? '-' : fmtTime(a.eibt)) : '-'}</td>
-                        <td style={{ ...td, background: rowBg }}>
+                        <td style={{ ...td, background: rowBg, ...arrDim }}>{a ? a.stand : '-'}</td>
+                        <td style={{ ...td, background: rowBg, ...arrDim }}>{a ? (a.serviceType === 'TOWING IN' ? '-' : fmtTime(a.eibt)) : '-'}</td>
+                        <td style={{ ...td, background: rowBg, ...arrDim }}>
                           {a ? (
                             <>
                               <div>{a.aircraftType}</div>
@@ -836,7 +628,7 @@ function EsummaryPage({ isActive, role }: Props) {
                             '-'
                           )}
                         </td>
-                        <td style={{ ...td, background: rowBg }}>
+                        <td style={{ ...td, background: rowBg, ...arrDim }}>
                           {a ? (
                             <>
                               <div>{a.initialL1}</div>
@@ -846,7 +638,7 @@ function EsummaryPage({ isActive, role }: Props) {
                             '-'
                           )}
                         </td>
-                        <td style={{ ...td, background: rowBg }}>
+                        <td style={{ ...td, background: rowBg, ...arrDim }}>
                           {a ? (
                             a.ack ? (
                               <>
@@ -865,7 +657,7 @@ function EsummaryPage({ isActive, role }: Props) {
                           const time = a ? (a as any)[`l${n}EventTime`] : null
                           const cell = a ? personCell(initial, time) : '-'
                           return (
-                            <td key={n} style={{ ...td, background: rowBg }}>
+                            <td key={n} style={{ ...td, background: rowBg, ...arrDim }}>
                               {cell === '-' || typeof cell === 'string' ? (
                                 cell
                               ) : (
@@ -877,7 +669,7 @@ function EsummaryPage({ isActive, role }: Props) {
                             </td>
                           )
                         })}
-                        <td style={{ ...td, background: rowBg }}>
+                        <td style={{ ...td, background: rowBg, ...arrDim }}>
                           {!a ? (
                             '-'
                           ) : mim ? (
@@ -889,7 +681,19 @@ function EsummaryPage({ isActive, role }: Props) {
                             ''
                           )}
                         </td>
-                        <td style={{ ...td, background: rowBg, borderLeft: '3px solid #000' }}>
+                        {!isSubmitted && (
+                          <td style={{ ...td, background: rowBg }} onClick={(e) => e.stopPropagation()}>
+                            {d && (
+                              <input
+                                type="checkbox"
+                                checked={depIncluded}
+                                onChange={() => toggleChecking(d.checkinId)}
+                                style={{ width: 18, height: 18, cursor: 'pointer' }}
+                              />
+                            )}
+                          </td>
+                        )}
+                        <td style={{ ...td, background: rowBg, borderLeft: isSubmitted ? '3px solid #000' : 'none', ...depDim }}>
                           {d ? (
                             <>
                               {d.flightNo}
@@ -899,9 +703,9 @@ function EsummaryPage({ isActive, role }: Props) {
                             '-'
                           )}
                         </td>
-                        <td style={{ ...td, background: rowBg }}>{d ? d.stand : '-'}</td>
-                        <td style={{ ...td, background: rowBg }}>{d ? (d.serviceType === 'TOWING OUT' ? '-' : fmtTime(d.eobt)) : '-'}</td>
-                        <td style={{ ...td, background: rowBg }}>
+                        <td style={{ ...td, background: rowBg, ...depDim }}>{d ? d.stand : '-'}</td>
+                        <td style={{ ...td, background: rowBg, ...depDim }}>{d ? (d.serviceType === 'TOWING OUT' ? '-' : fmtTime(d.eobt)) : '-'}</td>
+                        <td style={{ ...td, background: rowBg, ...depDim }}>
                           {d ? (
                             <>
                               <div>{d.aircraftType}</div>
@@ -911,7 +715,7 @@ function EsummaryPage({ isActive, role }: Props) {
                             '-'
                           )}
                         </td>
-                        <td style={{ ...td, background: rowBg }}>
+                        <td style={{ ...td, background: rowBg, ...depDim }}>
                           {d ? (
                             <>
                               <div>{d.initialL1}</div>
@@ -921,7 +725,7 @@ function EsummaryPage({ isActive, role }: Props) {
                             '-'
                           )}
                         </td>
-                        <td style={{ ...td, background: rowBg }}>
+                        <td style={{ ...td, background: rowBg, ...depDim }}>
                           {d ? (
                             d.ack ? (
                               <>
@@ -940,7 +744,7 @@ function EsummaryPage({ isActive, role }: Props) {
                           const time = d ? (d as any)[`l${n}EventTime`] : null
                           const cell = d ? personCell(initial, time) : '-'
                           return (
-                            <td key={n} style={{ ...td, background: rowBg }}>
+                            <td key={n} style={{ ...td, background: rowBg, ...depDim }}>
                               {cell === '-' || typeof cell === 'string' ? (
                                 cell
                               ) : (
@@ -1008,31 +812,51 @@ function EsummaryPage({ isActive, role }: Props) {
 
           {!isSubmitted && (
             <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16, maxWidth: 480, margin: '24px auto 0' }}>
-              <label style={labelStyle}>Choose Last Flight *</label>
-              <select value={lastFlightId} onChange={(e) => setLastFlightId(e.target.value)} style={inputStyle}>
-                <option value="">-- เลือกไฟลท์สุดท้ายของกะ --</option>
-                {lastFlightCandidates.map((r) => (
-                  <option key={r.checkinId} value={r.checkinId}>
-                    {fmtDateTimeShort(r.createdAt)} — {r.flightNo} ({r.serviceType})
-                  </option>
+              <label style={labelStyle}>วันที่เริ่มกะ</label>
+              <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} style={dateTimeInputStyle} />
+
+              <label style={labelStyle}>TIME</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {TIME_RANGES.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTimeRange(t)}
+                    style={{ ...toggleStyle, background: timeRange === t ? '#1a73e8' : '#fff', color: timeRange === t ? '#fff' : '#000' }}
+                  >
+                    {t}
+                  </button>
                 ))}
-              </select>
+              </div>
+
+              <label style={labelStyle}>SHIFT</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {SHIFT_NUMBERS.map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setShiftNumber(n)}
+                    style={{ ...toggleStyle, background: shiftNumber === n ? '#1a73e8' : '#fff', color: shiftNumber === n ? '#fff' : '#000' }}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+
+              <label style={labelStyle}>ผช.หน.ชุด ประจำ Concourse (Initial)</label>
+              <input type="text" value={supervisorInitial} onChange={(e) => lookupSupervisor(e.target.value.toUpperCase())} style={inputStyle} />
+              {supervisorName && <div style={{ color: '#137333', fontSize: 13, marginTop: 4 }}>{supervisorName}</div>}
+              {supervisorError && <div style={{ color: '#c5221f', fontSize: 13, marginTop: 4 }}>{supervisorError}</div>}
 
               {!confirming ? (
-                <button
-                  onClick={() => setConfirming(true)}
-                  disabled={!lastFlightId}
-                  style={{ ...buttonStyle, background: !lastFlightId ? '#ccc' : '#c5221f', color: '#fff', width: '100%', marginTop: 12 }}
-                >
+                <button onClick={handleSubmit} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', width: '100%', marginTop: 16 }}>
                   Submit e-Summary
                 </button>
               ) : (
-                <div style={{ background: '#fce8e6', border: '1px solid #c5221f', borderRadius: 8, padding: 14, marginTop: 12 }}>
+                <div style={{ background: '#fce8e6', border: '1px solid #c5221f', borderRadius: 8, padding: 14, marginTop: 16 }}>
                   <div style={{ color: '#c5221f', fontWeight: 600, marginBottom: 10 }}>
-                    ⚠️ โปรดตรวจสอบข้อมูลให้ถูกต้อง ก่อนกด Submit e-Summary
+                    ⚠️ โปรดตรวจสอบข้อมูลให้ถูกต้อง ก่อนกด Submit e-Summary ({includedRows.length} ไฟลท์)
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={handleSubmitSummary} disabled={submitting} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
+                    <button onClick={handleConfirmSubmit} disabled={submitting} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
                       {submitting ? 'กำลังส่ง...' : 'ส่ง'}
                     </button>
                     <button onClick={() => setConfirming(false)} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
@@ -1042,12 +866,6 @@ function EsummaryPage({ isActive, role }: Props) {
                 </div>
               )}
               {submitError && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{submitError}</div>}
-
-              {canManage && (
-                <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#fff', border: '1px solid #c5221f', color: '#c5221f', width: '100%', marginTop: 16 }}>
-                  ลบ e-Summary
-                </button>
-              )}
             </div>
           )}
 
@@ -1062,7 +880,7 @@ function EsummaryPage({ isActive, role }: Props) {
                     ลบ e-Summary นี้
                   </button>
                 )}
-                <button onClick={resetAll} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
+                <button onClick={handleCloseView} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
                   ปิด
                 </button>
               </div>
