@@ -30,7 +30,16 @@ function CheckinPage() {
   }, [])
 
   // ---------- หลุมจอด (มาจากสแกน QR เท่านั้น) + GPS ----------
-  const [standCode, setStandCode] = useState('')
+  // จำหลุมจอดไว้ใน localStorage ด้วย เพื่อให้กดรีเฟรชหน้าเว็บแล้วหลุมจอดไม่หายไป
+  // (ตอนนี้ qr ใน URL จะถูกลบออกหลัง login เสร็จ เพื่อกันปัญหารีเฟรชแล้วเด้งแท็บ
+  // ดังนั้นหลุมจอดต้องมีที่จำแยกของตัวเองแทน ไม่พึ่ง URL อีกต่อไป)
+  const [standCode, setStandCode] = useState(() => {
+    try {
+      return localStorage.getItem('plb_checkin_stand') || ''
+    } catch {
+      return ''
+    }
+  })
   const [concourse, setConcourse] = useState('')
   const [gpsStatus, setGpsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [gpsMessage, setGpsMessage] = useState('')
@@ -59,7 +68,13 @@ function CheckinPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const qr = params.get('qr')
-    if (qr && !qr.includes('-')) setStandCode(qr.toUpperCase())
+    if (qr && !qr.includes('-')) {
+      const code = qr.toUpperCase()
+      setStandCode(code)
+      try {
+        localStorage.setItem('plb_checkin_stand', code)
+      } catch {}
+    }
   }, [])
 
   // พอมีรหัสหลุมจอดแล้ว ลองตรวจ GPS ให้อัตโนมัติทันที
