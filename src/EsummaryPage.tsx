@@ -371,8 +371,8 @@ function EsummaryPage({ isActive, role }: Props) {
 
   return (
     <div style={{ padding: '16px 12px', boxSizing: 'border-box' }}>
-      <label style={sectionLabelStyle}>Concourse</label>
-      <div style={{ marginBottom: 16, maxWidth: 320 }}>
+      <label style={{ ...sectionLabelStyle, textAlign: 'center' as const }}>Concourse</label>
+      <div style={{ marginBottom: 16, maxWidth: 320, margin: '0 auto 16px' }}>
         <select
           value={concourse || ''}
           onChange={(e) => {
@@ -399,14 +399,6 @@ function EsummaryPage({ isActive, role }: Props) {
           ))}
         </select>
       </div>
-
-      {concourse && !viewingHistoryList && !viewSummary && (
-        <div style={{ textAlign: 'center', marginBottom: 16 }}>
-          <button onClick={handleOpenHistoryList} style={{ ...buttonStyle, background: '#fff', border: '1px solid #1a73e8', color: '#1a73e8', padding: '8px 16px' }}>
-            ดู e-Summary ย้อนหลัง
-          </button>
-        </div>
-      )}
 
       {concourse && viewingHistoryList && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 480, margin: '16px auto' }}>
@@ -452,15 +444,60 @@ function EsummaryPage({ isActive, role }: Props) {
               งานควบคุมสะพานเทียบเครื่องบิน ส่วนบริการเขตการบิน ฝ่ายปฏิบัติการเขตการบิน ท่าอากาศยานสุวรรณภูมิ
             </div>
           </div>
-          <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 8, fontSize: 13 }}>
-            DATE {headerReportDate ? fmtThaiDate(headerReportDate) : '…'} &nbsp;&nbsp; TIME {headerTimeRange || '…'} &nbsp;&nbsp; SHIFT {headerShiftNumber || '…'}{' '}
-            &nbsp;&nbsp; Concourse {concourse} &nbsp;&nbsp; ผช.หน.ชุด ประจำ Concourse {headerSupervisorName || '-'} ({headerSupervisorInitial || '-'})
-          </div>
-
-          {!isSubmitted && (
-            <div style={{ textAlign: 'center', color: '#1a73e8', fontSize: 12, marginBottom: 12 }}>
-              ตารางด้านล่างคือไฟลท์ที่ "รอสรุป" ทั้งหมดของ Concourse นี้ (ยังไม่ถูกรวมเข้า e-Summary ฉบับไหน) — ค่าเริ่มต้นติ๊กรวมไว้ทุกแถว
-              ถ้ามีไฟลท์ของกะถัดไปปนมา (เช่น มาเปลี่ยนกะเร็ว) ให้ติ๊กออกได้เลย ไฟลท์ที่ติ๊กออกจะรอรวมกับฉบับถัดไปให้เอง
+          {isSubmitted ? (
+            <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 12, fontSize: 13 }}>
+              DATE {headerReportDate ? fmtThaiDate(headerReportDate) : '…'} &nbsp;&nbsp; TIME {headerTimeRange || '…'} &nbsp;&nbsp; SHIFT {headerShiftNumber || '…'}{' '}
+              &nbsp;&nbsp; Concourse {concourse} &nbsp;&nbsp; ผช.หน.ชุด ประจำ Concourse {headerSupervisorName || '-'} ({headerSupervisorInitial || '-'})
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 8,
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+                color: '#000',
+                marginBottom: 12,
+                fontSize: 13,
+              }}
+            >
+              <span>DATE</span>
+              <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} style={inlineFieldStyle} />
+              <span>TIME</span>
+              <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)} style={inlineFieldStyle}>
+                <option value="">--</option>
+                {TIME_RANGES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              <span>SHIFT</span>
+              <select
+                value={shiftNumber ?? ''}
+                onChange={(e) => setShiftNumber(e.target.value ? Number(e.target.value) : null)}
+                style={{ ...inlineFieldStyle, width: 56 }}
+              >
+                <option value="">--</option>
+                {SHIFT_NUMBERS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <span>Concourse {concourse}</span>
+              <span>ผช.หน.ชุด ประจำ Concourse</span>
+              <input
+                type="text"
+                value={supervisorInitial}
+                onChange={(e) => lookupSupervisor(e.target.value.toUpperCase())}
+                placeholder="Initial"
+                style={{ ...inlineFieldStyle, width: 70 }}
+              />
+              {supervisorName && <span style={{ color: '#137333' }}>{supervisorName}</span>}
+              {supervisorError && <span style={{ color: '#c5221f', fontSize: 11, fontWeight: 400 }}>{supervisorError}</span>}
             </div>
           )}
 
@@ -532,7 +569,7 @@ function EsummaryPage({ isActive, role }: Props) {
                       <br />
                       MIMIC/ AUTO LEVEL MODE
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33, borderLeft: '3px solid #000' }}>Flight No.</th>
+                    <th style={{ ...th, ...stickyRow, top: 33, borderLeft: isSubmitted ? '3px solid #000' : 'none' }}>Flight No.</th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>หลุมจอด</th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>EOBT</th>
                     <th style={{ ...th, ...stickyRow, top: 33 }}>
@@ -807,40 +844,6 @@ function EsummaryPage({ isActive, role }: Props) {
 
           {!isSubmitted && (
             <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16, maxWidth: 480, margin: '24px auto 0' }}>
-              <label style={labelStyle}>วันที่เริ่มกะ</label>
-              <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} style={dateTimeInputStyle} />
-
-              <label style={labelStyle}>TIME</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {TIME_RANGES.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setTimeRange(t)}
-                    style={{ ...toggleStyle, background: timeRange === t ? '#1a73e8' : '#fff', color: timeRange === t ? '#fff' : '#000' }}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-
-              <label style={labelStyle}>SHIFT</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {SHIFT_NUMBERS.map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setShiftNumber(n)}
-                    style={{ ...toggleStyle, background: shiftNumber === n ? '#1a73e8' : '#fff', color: shiftNumber === n ? '#fff' : '#000' }}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-
-              <label style={labelStyle}>ผช.หน.ชุด ประจำ Concourse (Initial)</label>
-              <input type="text" value={supervisorInitial} onChange={(e) => lookupSupervisor(e.target.value.toUpperCase())} style={inputStyle} />
-              {supervisorName && <div style={{ color: '#137333', fontSize: 13, marginTop: 4 }}>{supervisorName}</div>}
-              {supervisorError && <div style={{ color: '#c5221f', fontSize: 13, marginTop: 4 }}>{supervisorError}</div>}
-
               {!confirming ? (
                 <button onClick={handleSubmit} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', width: '100%', marginTop: 16 }}>
                   Submit e-Summary
@@ -861,6 +864,16 @@ function EsummaryPage({ isActive, role }: Props) {
                 </div>
               )}
               {submitError && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{submitError}</div>}
+              {!viewingHistoryList && (
+                <div style={{ textAlign: 'center', marginTop: 16 }}>
+                  <button
+                    onClick={handleOpenHistoryList}
+                    style={{ ...buttonStyle, background: '#fff', border: '1px solid #1a73e8', color: '#1a73e8', padding: '8px 16px' }}
+                  >
+                    ดู e-Summary ย้อนหลัง
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -894,9 +907,7 @@ function EsummaryPage({ isActive, role }: Props) {
 
 const sectionLabelStyle = { display: 'block', fontWeight: 700, fontSize: 20, margin: '0 0 8px', color: '#000' }
 const labelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '14px 0 6px', color: '#000', textAlign: 'left' as const }
-const inputStyle = { width: '100%', padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' as const, background: '#fff', color: '#000' }
-const dateTimeInputStyle = { ...inputStyle, width: 'auto', maxWidth: '100%', display: 'block' as const }
-const toggleStyle = { flex: 1, padding: 10, border: '1px solid #ccc', borderRadius: 8, fontSize: 14, cursor: 'pointer' }
+const inlineFieldStyle = { padding: '4px 8px', border: '1px solid #ccc', borderRadius: 6, fontSize: 13, fontWeight: 400, color: '#000', background: '#fff' }
 const buttonStyle = { padding: 12, border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' }
 const reportTableStyle = { width: '100%', borderCollapse: 'collapse' as const, fontSize: 11, minWidth: 700 }
 const th = { padding: '6px 6px', textAlign: 'center' as const, color: '#000', border: '1px solid #ddd', background: '#f0f2f5' }
