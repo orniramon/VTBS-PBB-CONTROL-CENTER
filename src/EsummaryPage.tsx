@@ -63,11 +63,6 @@ function fmtTime(iso: string | null) {
   if (!iso) return ''
   return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
-function fmtDateTimeShort(iso: string) {
-  const d = new Date(iso)
-  return `${d.toLocaleDateString('th-TH')} ${fmtTime(iso)}`
-}
-
 // แปลงวันที่ (YYYY-MM-DD) เป็นแบบไทย DD-MM-YYYY(พ.ศ.) เช่น 2026-09-26 -> 26-09-2569
 function fmtThaiDate(dateStr: string) {
   if (!dateStr) return ''
