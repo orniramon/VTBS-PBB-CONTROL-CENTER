@@ -68,7 +68,10 @@ function PhotoPage({ myInitial, role, isActive }: Props) {
   const [allConcourses, setAllConcourses] = useState<string[]>([])
 
   const [selectedType, setSelectedType] = useState<string | null>(null)
-  const [selectedConcourse, setSelectedConcourse] = useState<string | null>(null)
+  // จำ concourse ที่เลือกไว้ "แยกตาม Service Type" (ใช้จริงบนมือถือ)
+  // เพื่อสลับไปดู Service Type อื่นแล้วย้อนกลับมา ไม่ต้องกดเลือก concourse ใหม่
+  const [selectedConcourseByType, setSelectedConcourseByType] = useState<Record<string, string | null>>({})
+  const selectedConcourse = selectedType ? selectedConcourseByType[selectedType] ?? null : null
 
   const [modalTarget, setModalTarget] = useState<PhotoRow | null>(null)
   const [lightboxUrls, setLightboxUrls] = useState<string[] | null>(null)
@@ -165,10 +168,7 @@ function PhotoPage({ myInitial, role, isActive }: Props) {
         {SERVICE_TYPES.map((t) => (
           <button
             key={t}
-            onClick={() => {
-              setSelectedType(t)
-              setSelectedConcourse(null)
-            }}
+            onClick={() => setSelectedType(t)}
             style={{
               ...toggleStyle,
               background: selectedType === t ? '#1a73e8' : '#fff',
@@ -205,7 +205,12 @@ function PhotoPage({ myInitial, role, isActive }: Props) {
               return (
                 <div key={c}>
                   <button
-                    onClick={() => setSelectedConcourse(selectedConcourse === c ? null : c)}
+                    onClick={() =>
+                      setSelectedConcourseByType((prev) => ({
+                        ...prev,
+                        [selectedType!]: prev[selectedType!] === c ? null : c,
+                      }))
+                    }
                     style={{
                       ...toggleStyle,
                       width: '100%',
@@ -738,7 +743,7 @@ function SubmitPhotoModal({
   const isDockType = row.serviceType === 'ARR' || row.serviceType === 'TOWING IN'
   const showAvdgs = isL1 && row.serviceType === 'ARR'
   const photoRequired = PHOTO_REQUIRED_TYPES.includes(row.serviceType)
-  const minPhotos = row.serviceType === 'ARR' ? 8 : row.serviceType === 'TOWING IN' ? 7 : 0
+  const minPhotos = row.serviceType === 'ARR' ? (isL1 ? 8 : 7) : row.serviceType === 'TOWING IN' ? 7 : 0
 
   const [bridgeStatus, setBridgeStatus] = useState('')
   const [bridgeReason, setBridgeReason] = useState('')

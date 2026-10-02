@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import './App.css'
 import MainLayout from './MainLayout'
+import { TABS } from './MainLayout'
 import type { TabName } from './MainLayout'
 import CheckinPage from './CheckinPage'
 import CheckinRecordPage from './CheckinRecordPage'
@@ -27,6 +28,12 @@ function initialTabFromQr(): TabName {
   const params = new URLSearchParams(window.location.search)
   const qr = params.get('qr')
   if (qr && qr.includes('-')) return 'Check-in'
+
+  // ไม่ได้มาจากการสแกน QR -> ใช้แท็บล่าสุดที่เปิดไว้ก่อนรีเฟรช (ถ้ามี)
+  // เพื่อไม่ให้รีเฟรชหน้าเว็บแล้วเด้งกลับไปแท็บแรกเสมอ
+  const savedTab = localStorage.getItem('plb_active_tab')
+  if (savedTab && (TABS as readonly string[]).includes(savedTab)) return savedTab as TabName
+
   return 'VTBS PBB CHECK'
 }
 
@@ -50,6 +57,12 @@ function App() {
       }
     }
   }, [])
+
+  // จำแท็บล่าสุดที่เปิดไว้ ไว้ใน localStorage ทุกครั้งที่สลับแท็บ
+  // เพื่อให้กดรีเฟรชหน้าเว็บแล้วยังอยู่แท็บเดิม ไม่เด้งกลับไปแท็บแรก
+  useEffect(() => {
+    localStorage.setItem('plb_active_tab', activeTab)
+  }, [activeTab])
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault()

@@ -383,9 +383,7 @@ function CheckinRecordPage({ role, myInitial, isActive }: Props) {
                                         >
                                           ACK
                                         </button>
-                                      ) : (
-                                        <span style={{ color: '#c5221f', fontSize: '0.85em' }}>ยังไม่ ACK</span>
-                                      )}
+                                      ) : null}
                                     </div>
                                     {r.ackAt && (
                                       <div style={{ fontSize: '0.8em', color: '#137333', marginTop: 1 }}>{timeOf(r.ackAt)}</div>
