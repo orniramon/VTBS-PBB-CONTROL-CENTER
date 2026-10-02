@@ -61,6 +61,21 @@ function App() {
     }
   }, [])
 
+  // เอา ?qr=... ออกจาก URL หลังจากอ่านไปใช้ตอนเปิดหน้าเว็บครั้งนี้แล้ว (ทำงานหลังจากแท็บ
+  // VTBS PBB CHECK / Check-in อ่านค่า qr ไปใส่ช่องให้เรียบร้อยแล้ว เพราะ effect ของ
+  // component ลูกจะรันก่อน effect นี้ของ App เสมอ) ไม่งั้นค่า qr จะติดอยู่ใน URL ตลอด
+  // ทำให้กดรีเฟรชหน้าเว็บครั้งต่อไป (ไม่ว่าจะอยู่แท็บไหน) ถูกเข้าใจผิดว่าเพิ่งสแกน QR
+  // แล้วเด้งไปแท็บ VTBS PBB CHECK ซ้ำทุกครั้ง
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('qr')) {
+      params.delete('qr')
+      const query = params.toString()
+      const newUrl = window.location.pathname + (query ? '?' + query : '') + window.location.hash
+      window.history.replaceState({}, '', newUrl)
+    }
+  }, [])
+
   // จำแท็บล่าสุดที่เปิดไว้ ไว้ใน localStorage ทุกครั้งที่สลับแท็บ
   // เพื่อให้กดรีเฟรชหน้าเว็บแล้วยังอยู่แท็บเดิม ไม่เด้งกลับไปแท็บแรก
   useEffect(() => {
