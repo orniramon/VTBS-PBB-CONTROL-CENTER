@@ -67,10 +67,25 @@ function PhotoPage({ myInitial, role, isActive }: Props) {
   const [error, setError] = useState('')
   const [allConcourses, setAllConcourses] = useState<string[]>([])
 
-  const [selectedType, setSelectedType] = useState<string | null>(null)
+  // จำ Service Type และ concourse ที่เลือกไว้ (ใน localStorage) เพื่อให้กดรีเฟรช
+  // หน้าเว็บแล้วยังอยู่ตัวเลือกเดิม ไม่ต้องกดเลือกใหม่ — ข้อมูลจะโหลดอัปเดตให้เองด้านล่าง
+  const [selectedType, setSelectedType] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('plb_photo_selectedType')
+    } catch {
+      return null
+    }
+  })
   // จำ concourse ที่เลือกไว้ "แยกตาม Service Type" (ใช้จริงบนมือถือ)
   // เพื่อสลับไปดู Service Type อื่นแล้วย้อนกลับมา ไม่ต้องกดเลือก concourse ใหม่
-  const [selectedConcourseByType, setSelectedConcourseByType] = useState<Record<string, string | null>>({})
+  const [selectedConcourseByType, setSelectedConcourseByType] = useState<Record<string, string | null>>(() => {
+    try {
+      const saved = localStorage.getItem('plb_photo_selectedConcourseByType')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
   const selectedConcourse = selectedType ? selectedConcourseByType[selectedType] ?? null : null
 
   const [modalTarget, setModalTarget] = useState<PhotoRow | null>(null)
@@ -168,7 +183,12 @@ function PhotoPage({ myInitial, role, isActive }: Props) {
         {SERVICE_TYPES.map((t) => (
           <button
             key={t}
-            onClick={() => setSelectedType(t)}
+            onClick={() => {
+              setSelectedType(t)
+              try {
+                localStorage.setItem('plb_photo_selectedType', t)
+              } catch {}
+            }}
             style={{
               ...toggleStyle,
               background: selectedType === t ? '#1a73e8' : '#fff',
@@ -206,10 +226,13 @@ function PhotoPage({ myInitial, role, isActive }: Props) {
                 <div key={c}>
                   <button
                     onClick={() =>
-                      setSelectedConcourseByType((prev) => ({
-                        ...prev,
-                        [selectedType!]: prev[selectedType!] === c ? null : c,
-                      }))
+                      setSelectedConcourseByType((prev) => {
+                        const next = { ...prev, [selectedType!]: prev[selectedType!] === c ? null : c }
+                        try {
+                          localStorage.setItem('plb_photo_selectedConcourseByType', JSON.stringify(next))
+                        } catch {}
+                        return next
+                      })
                     }
                     style={{
                       ...toggleStyle,

@@ -120,7 +120,15 @@ function EsummaryPage({ isActive, role }: Props) {
   const canManage = CAN_MANAGE_ROLES.includes(role)
 
   const [allConcourses, setAllConcourses] = useState<string[]>([])
-  const [concourse, setConcourse] = useState<string | null>(null)
+  // จำ concourse ที่เลือกไว้ใน localStorage เพื่อให้กดรีเฟรชหน้าเว็บแล้ว
+  // ยังอยู่ concourse เดิม ไม่ต้องกดเลือกใหม่ (ข้อมูลจะโหลดอัปเดตให้เองด้านล่าง)
+  const [concourse, setConcourse] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('plb_esummary_concourse')
+    } catch {
+      return null
+    }
+  })
 
   // ----- รายการไฟลท์ที่ "รอสรุป" (ยังไม่ถูกรวมเข้า e-Summary ฉบับไหน) -----
   const [pendingRows, setPendingRows] = useState<CheckinRow[]>([])
@@ -179,6 +187,9 @@ function EsummaryPage({ isActive, role }: Props) {
   // ----------------------------------------------------------------
   function handleSelectConcourse(c: string) {
     setConcourse(c)
+    try {
+      localStorage.setItem('plb_esummary_concourse', c)
+    } catch {}
     resetForm()
     setViewingHistoryList(false)
     setViewSummary(null)
@@ -197,6 +208,8 @@ function EsummaryPage({ isActive, role }: Props) {
 
   useEffect(() => {
     if (!concourse || viewSummary || viewingHistoryList || !isActive) return
+    // โหลดทันทีด้วย (ครอบคลุมกรณี concourse ถูกจำมาจาก localStorage ตอนรีเฟรชหน้าเว็บ)
+    loadPending(concourse, true)
     const timer = setInterval(() => loadPending(concourse, true), 10000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -27,7 +27,10 @@ type Session = {
 function initialTabFromQr(): TabName {
   const params = new URLSearchParams(window.location.search)
   const qr = params.get('qr')
-  if (qr && qr.includes('-')) return 'Check-in'
+
+  // มาจากการสแกน QR เสมอ -> เปิดแท็บตามรูปแบบ QR ทันที ไม่ใช้แท็บที่จำไว้
+  // (QR หลุมจอด ไม่มี "-" -> VTBS PBB CHECK, QR ห้องพนักงาน มี "-" -> Check-in)
+  if (qr) return qr.includes('-') ? 'Check-in' : 'VTBS PBB CHECK'
 
   // ไม่ได้มาจากการสแกน QR -> ใช้แท็บล่าสุดที่เปิดไว้ก่อนรีเฟรช (ถ้ามี)
   // เพื่อไม่ให้รีเฟรชหน้าเว็บแล้วเด้งกลับไปแท็บแรกเสมอ
