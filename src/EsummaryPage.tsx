@@ -26,6 +26,15 @@ type CheckinRow = {
 
 type MergedRow = { arr?: CheckinRow; dep?: CheckinRow }
 
+type FieldGroup = 'flightNo' | 'eibt' | 'eobt' | 'aircraft' | 'l1' | 'l2' | 'l3'
+type EditTarget = {
+  checkinId: string
+  group: FieldGroup
+  title: string
+  flightNo: string
+  current: { flightNo?: string; time?: string; aircraftType?: string; aircraftReg?: string; initial?: string }
+}
+
 type SummaryInfo = {
   id: string
   concourse: string
@@ -102,7 +111,7 @@ function mimicInfo(r?: CheckinRow) {
   const times = [r.l1EventTime, r.l2EventTime, r.l3EventTime].filter(Boolean).map((t) => new Date(t as string).getTime())
   if (times.length === 0) return null
   const latest = new Date(Math.max(...times))
-  latest.setMinutes(latest.getMinutes() + 10)
+  latest.setMinutes(latest.getMinutes() + 5)
   return { initial: r.ackByInitial || '-', time: latest.toISOString() }
 }
 
@@ -114,33 +123,55 @@ function personCell(initial: string | null | undefined, eventTime: string | null
 
 const CAN_MANAGE_ROLES = ['Apron', 'Supervisor']
 
+// ----------------------------------------------------------------
+// จำข้อมูลหัวรายงาน (DATE/TIME/SHIFT/ผช.หน.ชุด) ที่กำลังกรอกอยู่ แยกตาม
+// concourse ไว้ใน localStorage เพื่อให้กดรีเฟรชหน้าเว็บแล้วไม่ต้องเลือกใหม่
+// ----------------------------------------------------------------
+function readSavedConcourse(): string | null {
+  try {
+    return localStorage.getItem('plb_esummary_concourse')
+  } catch {
+    return null
+  }
+}
+type HeaderDraft = { reportDate?: string; timeRange?: string; shiftNumber?: number | null; supervisorInitial?: string; supervisorName?: string }
+function loadHeaderDraft(c: string | null): HeaderDraft {
+  if (!c) return {}
+  try {
+    const raw = localStorage.getItem('plb_esummary_header_' + c)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+function saveHeaderDraft(c: string | null, draft: HeaderDraft) {
+  if (!c) return
+  try {
+    localStorage.setItem('plb_esummary_header_' + c, JSON.stringify(draft))
+  } catch {}
+}
+
 type Props = { isActive: boolean; myInitial: string; role: string }
 
-function EsummaryPage({ isActive, role }: Props) {
+function EsummaryPage({ isActive, myInitial, role }: Props) {
   const canManage = CAN_MANAGE_ROLES.includes(role)
 
   const [allConcourses, setAllConcourses] = useState<string[]>([])
   // จำ concourse ที่เลือกไว้ใน localStorage เพื่อให้กดรีเฟรชหน้าเว็บแล้ว
   // ยังอยู่ concourse เดิม ไม่ต้องกดเลือกใหม่ (ข้อมูลจะโหลดอัปเดตให้เองด้านล่าง)
-  const [concourse, setConcourse] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('plb_esummary_concourse')
-    } catch {
-      return null
-    }
-  })
+  const [concourse, setConcourse] = useState<string | null>(readSavedConcourse)
 
   // ----- รายการไฟลท์ที่ "รอสรุป" (ยังไม่ถูกรวมเข้า e-Summary ฉบับไหน) -----
   const [pendingRows, setPendingRows] = useState<CheckinRow[]>([])
   const [loadingPending, setLoadingPending] = useState(false)
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set())
 
-  // ----- ฟอร์มข้อมูลกะ (กรอกตอนจะ Submit เท่านั้น ไม่ต้องกรอกก่อนเห็นตาราง) -----
-  const [reportDate, setReportDate] = useState('')
-  const [timeRange, setTimeRange] = useState('')
-  const [shiftNumber, setShiftNumber] = useState<number | null>(null)
-  const [supervisorInitial, setSupervisorInitial] = useState('')
-  const [supervisorName, setSupervisorName] = useState('')
+  // ----- ฟอร์มข้อมูลกะ (จำค่าไว้ใน localStorage แยกตาม concourse กันรีเฟรชแล้วหาย) -----
+  const [reportDate, setReportDate] = useState(() => loadHeaderDraft(readSavedConcourse()).reportDate || '')
+  const [timeRange, setTimeRange] = useState(() => loadHeaderDraft(readSavedConcourse()).timeRange || '')
+  const [shiftNumber, setShiftNumber] = useState<number | null>(() => loadHeaderDraft(readSavedConcourse()).shiftNumber || null)
+  const [supervisorInitial, setSupervisorInitial] = useState(() => loadHeaderDraft(readSavedConcourse()).supervisorInitial || '')
+  const [supervisorName, setSupervisorName] = useState(() => loadHeaderDraft(readSavedConcourse()).supervisorName || '')
   const [supervisorError, setSupervisorError] = useState('')
   const supervisorReqIdRef = useRef(0)
 
@@ -159,6 +190,13 @@ function EsummaryPage({ isActive, role }: Props) {
   const [viewRows, setViewRows] = useState<CheckinRow[]>([])
   const [loadingView, setLoadingView] = useState(false)
 
+  // ช่องที่ "ข้อมูลไม่ครบ" จากการพยายาม Submit ครั้งล่าสุด (ไฮไลท์สีแดงอ่อนเฉพาะช่อง)
+  // คีย์รูปแบบ "<checkinId>_l1" / "_l2" / "_l3"
+  const [incompleteCells, setIncompleteCells] = useState<Set<string>>(new Set())
+
+  // ----- แก้ไขข้อมูลเชคอิน (ดับเบิลคลิก - เฉพาะ Role Apron/Supervisor) -----
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
+
   useEffect(() => {
     fetch(CHECKIN_API_URL + '/stands')
       .then((res) => res.json())
@@ -168,6 +206,7 @@ function EsummaryPage({ isActive, role }: Props) {
       .catch(() => {})
   }, [])
 
+  // ล้างฟอร์มทั้งหมด (ใช้หลัง Submit สำเร็จ - เริ่มฉบับใหม่) และลบ draft ที่จำไว้
   function resetForm() {
     setReportDate('')
     setTimeRange('')
@@ -179,23 +218,47 @@ function EsummaryPage({ isActive, role }: Props) {
     setSubmitError('')
     setConfirming(false)
     setSelectedRow(null)
+    setIncompleteCells(new Set())
+    if (concourse) {
+      try {
+        localStorage.removeItem('plb_esummary_header_' + concourse)
+      } catch {}
+    }
   }
 
   // ----------------------------------------------------------------
   // เลือก Concourse -> โหลดไฟลท์ที่ "รอสรุป" ของ concourse นี้ขึ้นมาทันที
   // ไม่ต้องกด Create ไม่ต้องเลือก First Flight อีกต่อไป
+  // (โหลด draft ที่จำไว้ของ concourse นี้กลับมาด้วย ถ้ามี แทนที่จะล้างฟอร์มทิ้งเสมอ)
   // ----------------------------------------------------------------
   function handleSelectConcourse(c: string) {
     setConcourse(c)
     try {
       localStorage.setItem('plb_esummary_concourse', c)
     } catch {}
-    resetForm()
+    const draft = loadHeaderDraft(c)
+    setReportDate(draft.reportDate || '')
+    setTimeRange(draft.timeRange || '')
+    setShiftNumber(draft.shiftNumber || null)
+    setSupervisorInitial(draft.supervisorInitial || '')
+    setSupervisorName(draft.supervisorName || '')
+    setSupervisorError('')
+    setExcludedIds(new Set())
+    setSubmitError('')
+    setConfirming(false)
+    setSelectedRow(null)
+    setIncompleteCells(new Set())
     setViewingHistoryList(false)
     setViewSummary(null)
     setViewRows([])
     loadPending(c)
   }
+
+  // บันทึก draft หัวรายงานทุกครั้งที่ข้อมูลเปลี่ยน (เฉพาะตอนกำลังกรอกฟอร์มใหม่)
+  useEffect(() => {
+    if (!concourse || viewSummary) return
+    saveHeaderDraft(concourse, { reportDate, timeRange, shiftNumber, supervisorInitial, supervisorName })
+  }, [concourse, viewSummary, reportDate, timeRange, shiftNumber, supervisorInitial, supervisorName])
 
   function loadPending(c: string, silent?: boolean) {
     if (!silent) setLoadingPending(true)
@@ -250,6 +313,60 @@ function EsummaryPage({ isActive, role }: Props) {
   }
 
   // ----------------------------------------------------------------
+  // แก้ไขข้อมูลเชคอิน (ดับเบิลคลิกที่ช่อง - เฉพาะ Role Apron/Supervisor)
+  // แก้ตรงตาราง checkins เลย จึงอัปเดตให้เองทั้งแท็บ PBB Check Record / PBB Photo
+  // ----------------------------------------------------------------
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState('')
+
+  function openEdit(r: CheckinRow | undefined, group: FieldGroup, title: string) {
+    if (!canManage || !r) return
+    let current: EditTarget['current'] = {}
+    if (group === 'flightNo') current = { flightNo: r.flightNo }
+    else if (group === 'eibt') current = { time: fmtTime(r.eibt) }
+    else if (group === 'eobt') current = { time: fmtTime(r.eobt) }
+    else if (group === 'aircraft') current = { aircraftType: r.aircraftType, aircraftReg: r.aircraftReg || '' }
+    else if (group === 'l1') current = { initial: r.initialL1 || '', time: fmtTime(r.l1EventTime) }
+    else if (group === 'l2') current = { initial: r.initialL2 || '', time: fmtTime(r.l2EventTime) }
+    else if (group === 'l3') current = { initial: r.initialL3 || '', time: fmtTime(r.l3EventTime) }
+    setEditError('')
+    setEditTarget({ checkinId: r.checkinId, group, title, flightNo: r.flightNo, current })
+  }
+
+  async function handleSaveEdit(values: Record<string, string>) {
+    if (!editTarget) return
+    setSavingEdit(true)
+    setEditError('')
+    try {
+      const res = await fetch(CHECKIN_API_URL + '/checkin-edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkinId: editTarget.checkinId,
+          initial: myInitial,
+          fieldGroup: editTarget.group,
+          values,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setEditTarget(null)
+        if (viewSummary) {
+          handleOpenHistoryItem(viewSummary)
+        } else if (concourse) {
+          loadPending(concourse, true)
+        }
+      } else {
+        setEditError(data.message || 'บันทึกไม่สำเร็จ')
+      }
+    } catch {
+      setEditError('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  // ----------------------------------------------------------------
   // ดู e-Summary ย้อนหลัง (เฉพาะที่ submit แล้ว) ของ concourse ที่เลือกไว้
   // ----------------------------------------------------------------
   function handleOpenHistoryList() {
@@ -282,40 +399,31 @@ function EsummaryPage({ isActive, role }: Props) {
     if (concourse) loadPending(concourse)
   }
 
-  async function handleDeleteSummary() {
-    if (!viewSummary) return
-    if (!confirm('ยืนยันการลบ e-Summary นี้? ไฟลท์ในฉบับนี้จะกลับไปเป็น "รอสรุป" ทันที')) return
-    await fetch(ESUMMARY_API_URL + '/shift-delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: viewSummary.id }),
-    })
-    handleCloseView()
-  }
-
   // แถวที่ "รวม" เข้า e-Summary ฉบับที่จะ submit (ยังไม่ถูกติ๊กออก)
   const includedRows = pendingRows.filter((r) => !excludedIds.has(r.checkinId))
-  const includedMergedRows = buildMergedRows(includedRows)
 
   async function handleSubmit() {
     setSubmitError('')
+    setIncompleteCells(new Set())
     if (!reportDate || !timeRange || !shiftNumber || !supervisorInitial) {
       return setSubmitError('⚠️ กรุณากรอกข้อมูลให้ครบทุกช่อง (วันที่/เวลา/ผลัด/ผช.หน.ชุด)')
     }
     if (includedRows.length === 0) {
       return setSubmitError('⚠️ ยังไม่มีไฟลท์ที่เลือกไว้สำหรับ e-Summary ฉบับนี้ (ไฟลท์ถูกติ๊กออกหมด)')
     }
-    const incomplete = includedMergedRows.find((m) => {
-      const checkSide = (r?: CheckinRow) => {
-        if (!r) return false
-        if (!r.initialL1) return false
-        return !r.l1EventTime
-      }
-      return checkSide(m.arr) || checkSide(m.dep)
+    // ตรวจทุกไฟลท์ที่เลือกไว้ ว่าแถวไหนมี "ผู้เทียบ/ถอย" ใส่ไว้แล้ว แต่ไม่มี "เวลาเทียบ/ถอย"
+    // คู่กัน (ข้อมูลไม่ครบ) - เก็บเป็นช่องๆ ไว้ไฮไลท์ ไม่เอาทั้งแถว
+    const missing = new Set<string>()
+    includedRows.forEach((r) => {
+      ;([1, 2, 3] as const).forEach((n) => {
+        const initial = (r as any)[`initialL${n}`]
+        const time = (r as any)[`l${n}EventTime`]
+        if (initial && !time) missing.add(`${r.checkinId}_l${n}`)
+      })
     })
-    if (incomplete) {
-      const fn = incomplete.arr?.flightNo || incomplete.dep?.flightNo || ''
-      return setSubmitError(`⚠️ ส่ง e-Summary ไม่สำเร็จ ใส่เวลา (เทียบ)/(ถอย) ไม่ครบ Flight No. ${fn}`)
+    if (missing.size > 0) {
+      setIncompleteCells(missing)
+      return setSubmitError('Submit e-Summary ไม่สำเร็จ\nเนื่องจากใส่ข้อมูลไม่ครบ')
     }
     setConfirming(true)
   }
@@ -458,21 +566,23 @@ function EsummaryPage({ isActive, role }: Props) {
             </div>
           </div>
           {isSubmitted ? (
-            <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 12, fontSize: 13 }}>
-              DATE {headerReportDate ? fmtThaiDate(headerReportDate) : '…'} &nbsp;&nbsp; TIME {headerTimeRange || '…'} &nbsp;&nbsp; SHIFT {headerShiftNumber || '…'}{' '}
-              &nbsp;&nbsp; Concourse {concourse} &nbsp;&nbsp; ผช.หน.ชุด ประจำ Concourse {headerSupervisorName || '-'} ({headerSupervisorInitial || '-'})
+            <div style={{ textAlign: 'center', fontWeight: 700, color: '#000', marginBottom: 14, fontSize: 13, lineHeight: 1.8 }}>
+              DATE {headerReportDate ? fmtThaiDate(headerReportDate) : '…'} &nbsp;&nbsp;&nbsp;&nbsp; TIME {headerTimeRange || '…'} &nbsp;&nbsp;&nbsp;&nbsp; SHIFT{' '}
+              {headerShiftNumber || '…'} &nbsp;&nbsp;&nbsp;&nbsp; Concourse {concourse} &nbsp;&nbsp;&nbsp;&nbsp; ผช.หน.ชุด ประจำ Concourse{' '}
+              {headerSupervisorName || '-'} ({headerSupervisorInitial || '-'})
             </div>
           ) : (
             <div
               style={{
                 display: 'flex',
                 flexWrap: 'wrap',
-                gap: 8,
+                rowGap: 10,
+                columnGap: 18,
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 700,
                 color: '#000',
-                marginBottom: 12,
+                marginBottom: 14,
                 fontSize: 13,
               }}
             >
@@ -515,7 +625,7 @@ function EsummaryPage({ isActive, role }: Props) {
           )}
 
           <div style={{ maxHeight: '70vh', overflow: 'auto', border: '1px solid #ddd' }}>
-            <div style={{ minWidth: isSubmitted ? 1700 : 1800 }}>
+            <div style={{ minWidth: 1850 }}>
               <table style={reportTableStyle}>
                 <thead>
                   <tr>
@@ -539,78 +649,84 @@ function EsummaryPage({ isActive, role }: Props) {
                         Flt.
                       </th>
                     )}
-                    <th style={{ ...th, ...stickyRow, background: '#fef7e0', borderLeft: isSubmitted ? '3px solid #000' : 'none' }} colSpan={9}>
+                    <th style={{ ...th, ...stickyRow, background: '#fef7e0', borderLeft: '3px solid #000' }} colSpan={9}>
                       เที่ยวบินขาออก (DEP) และ เรียกถอย PBB (TOWING OUT)
                     </th>
                   </tr>
                   <tr>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>Flight No.</th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>หลุมจอด</th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>EIBT</th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>Flight No.</th>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>หลุมจอด</th>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>EIBT</th>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       A/C Type
                       <br />
                       A/C Reg.
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ชื่อผู้เช็ค
                       <br />
-                      เวลา PBB Check
+                      เวลา
+                      <br />
+                      PBB Check
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ACK
                       <br />
                       เวลา ACK
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ผู้เทียบ L1
                       <br />
                       เวลาเทียบ
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ผู้เทียบ L2
                       <br />
                       เวลาเทียบ
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ผู้เทียบ L3
                       <br />
                       เวลาเทียบ
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
-                      ชื่อผู้เช็ค/ เวลาเช็ค
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
+                      ชื่อผู้เช็ค/
                       <br />
-                      MIMIC/ AUTO LEVEL MODE
+                      เวลาเช็ค MIMIC/
+                      <br />
+                      AUTO LEVEL MODE
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33, borderLeft: isSubmitted ? '3px solid #000' : 'none' }}>Flight No.</th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>หลุมจอด</th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>EOBT</th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33, borderLeft: '3px solid #000' }}>Flight No.</th>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>หลุมจอด</th>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>EOBT</th>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       A/C Type
                       <br />
                       A/C Reg.
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ชื่อผู้เช็ค
                       <br />
-                      เวลา PBB Check
+                      เวลา
+                      <br />
+                      PBB Check
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ACK
                       <br />
                       เวลา ACK
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ผู้ถอย L1
                       <br />
                       เวลาถอย
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ผู้ถอย L2
                       <br />
                       เวลาถอย
                     </th>
-                    <th style={{ ...th, ...stickyRow, top: 33 }}>
+                    <th style={{ ...dataTh, ...stickyRow, top: 33 }}>
                       ผู้ถอย L3
                       <br />
                       เวลาถอย
@@ -633,7 +749,7 @@ function EsummaryPage({ isActive, role }: Props) {
                     // ลำเดียวกัน คาบเกี่ยวกันคนละผลัด)
                     const arrIncluded = !a || !excludedIds.has(a.checkinId)
                     const depIncluded = !d || !excludedIds.has(d.checkinId)
-                    const rowBg = selectedRow === i ? '#fff6c9' : i % 2 === 0 ? '#fff' : '#fafafa'
+                    const rowBg = selectedRow === i ? '#fffbe6' : i % 2 === 0 ? '#fff' : '#fafafa'
                     const arrDim = !isSubmitted && a && !arrIncluded ? { opacity: 0.45 } : undefined
                     const depDim = !isSubmitted && d && !depIncluded ? { opacity: 0.45 } : undefined
                     return (
@@ -651,7 +767,13 @@ function EsummaryPage({ isActive, role }: Props) {
                             )}
                           </td>
                         )}
-                        <td style={{ ...td, background: rowBg, ...arrDim }}>
+                        <td
+                          style={{ ...td, background: rowBg, ...arrDim, ...(canManage && a ? editableCellStyle : undefined) }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            openEdit(a, 'flightNo', 'Flight No. (ขาเข้า)')
+                          }}
+                        >
                           {a ? (
                             <>
                               {a.flightNo}
@@ -662,8 +784,22 @@ function EsummaryPage({ isActive, role }: Props) {
                           )}
                         </td>
                         <td style={{ ...td, background: rowBg, ...arrDim }}>{a ? a.stand : '-'}</td>
-                        <td style={{ ...td, background: rowBg, ...arrDim }}>{a ? (a.serviceType === 'TOWING IN' ? '-' : fmtTime(a.eibt)) : '-'}</td>
-                        <td style={{ ...td, background: rowBg, ...arrDim }}>
+                        <td
+                          style={{ ...td, background: rowBg, ...arrDim, ...(canManage && a && a.serviceType !== 'TOWING IN' ? editableCellStyle : undefined) }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            if (a && a.serviceType !== 'TOWING IN') openEdit(a, 'eibt', 'EIBT (ขาเข้า)')
+                          }}
+                        >
+                          {a ? (a.serviceType === 'TOWING IN' ? '-' : fmtTime(a.eibt)) : '-'}
+                        </td>
+                        <td
+                          style={{ ...td, background: rowBg, ...arrDim, ...(canManage && a ? editableCellStyle : undefined) }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            openEdit(a, 'aircraft', 'A/C Type / A/C Reg. (ขาเข้า)')
+                          }}
+                        >
                           {a ? (
                             <>
                               <div>{a.aircraftType}</div>
@@ -701,8 +837,23 @@ function EsummaryPage({ isActive, role }: Props) {
                           const initial = a ? (a as any)[`initialL${n}`] : null
                           const time = a ? (a as any)[`l${n}EventTime`] : null
                           const cell = a ? personCell(initial, time) : '-'
+                          const group = `l${n}` as FieldGroup
+                          const incomplete = a ? incompleteCells.has(`${a.checkinId}_l${n}`) : false
                           return (
-                            <td key={n} style={{ ...td, background: rowBg, ...arrDim }}>
+                            <td
+                              key={n}
+                              style={{
+                                ...td,
+                                background: rowBg,
+                                ...arrDim,
+                                ...(canManage && a ? editableCellStyle : undefined),
+                                ...(incomplete ? incompleteCellStyle : undefined),
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation()
+                                if (a) openEdit(a, group, `ผู้เทียบ L${n} / เวลาเทียบ (ขาเข้า)`)
+                              }}
+                            >
                               {cell === '-' || typeof cell === 'string' ? (
                                 cell
                               ) : (
@@ -738,7 +889,19 @@ function EsummaryPage({ isActive, role }: Props) {
                             )}
                           </td>
                         )}
-                        <td style={{ ...td, background: rowBg, borderLeft: isSubmitted ? '3px solid #000' : 'none', ...depDim }}>
+                        <td
+                          style={{
+                            ...td,
+                            background: rowBg,
+                            borderLeft: '3px solid #000',
+                            ...depDim,
+                            ...(canManage && d ? editableCellStyle : undefined),
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            openEdit(d, 'flightNo', 'Flight No. (ขาออก)')
+                          }}
+                        >
                           {d ? (
                             <>
                               {d.flightNo}
@@ -749,8 +912,22 @@ function EsummaryPage({ isActive, role }: Props) {
                           )}
                         </td>
                         <td style={{ ...td, background: rowBg, ...depDim }}>{d ? d.stand : '-'}</td>
-                        <td style={{ ...td, background: rowBg, ...depDim }}>{d ? (d.serviceType === 'TOWING OUT' ? '-' : fmtTime(d.eobt)) : '-'}</td>
-                        <td style={{ ...td, background: rowBg, ...depDim }}>
+                        <td
+                          style={{ ...td, background: rowBg, ...depDim, ...(canManage && d && d.serviceType !== 'TOWING OUT' ? editableCellStyle : undefined) }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            if (d && d.serviceType !== 'TOWING OUT') openEdit(d, 'eobt', 'EOBT (ขาออก)')
+                          }}
+                        >
+                          {d ? (d.serviceType === 'TOWING OUT' ? '-' : fmtTime(d.eobt)) : '-'}
+                        </td>
+                        <td
+                          style={{ ...td, background: rowBg, ...depDim, ...(canManage && d ? editableCellStyle : undefined) }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            openEdit(d, 'aircraft', 'A/C Type / A/C Reg. (ขาออก)')
+                          }}
+                        >
                           {d ? (
                             <>
                               <div>{d.aircraftType}</div>
@@ -788,8 +965,23 @@ function EsummaryPage({ isActive, role }: Props) {
                           const initial = d ? (d as any)[`initialL${n}`] : null
                           const time = d ? (d as any)[`l${n}EventTime`] : null
                           const cell = d ? personCell(initial, time) : '-'
+                          const group = `l${n}` as FieldGroup
+                          const incomplete = d ? incompleteCells.has(`${d.checkinId}_l${n}`) : false
                           return (
-                            <td key={n} style={{ ...td, background: rowBg, ...depDim }}>
+                            <td
+                              key={n}
+                              style={{
+                                ...td,
+                                background: rowBg,
+                                ...depDim,
+                                ...(canManage && d ? editableCellStyle : undefined),
+                                ...(incomplete ? incompleteCellStyle : undefined),
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation()
+                                if (d) openEdit(d, group, `ผู้ถอย L${n} / เวลาถอย (ขาออก)`)
+                              }}
+                            >
                               {cell === '-' || typeof cell === 'string' ? (
                                 cell
                               ) : (
@@ -814,13 +1006,16 @@ function EsummaryPage({ isActive, role }: Props) {
             <table style={{ ...reportTableStyle, minWidth: 'auto' }}>
               <thead>
                 <tr>
-                  <th style={th}>PBB Operator (Initial)</th>
+                  <th style={{ ...th, minWidth: 110 }}>
+                    <div>PBB Operator</div>
+                    <div style={{ fontWeight: 400, fontSize: '0.85em' }}>(Initial)</div>
+                  </th>
                   {opInitials.map((initial) => (
-                    <th key={initial} style={th}>
+                    <th key={initial} style={{ ...th, minWidth: 42 }}>
                       {initial}
                     </th>
                   ))}
-                  <th style={{ ...th, background: '#f0f2f5' }}>รวม</th>
+                  <th style={{ ...th, background: '#f0f2f5', minWidth: 42 }}>รวม</th>
                 </tr>
               </thead>
               <tbody>
@@ -862,21 +1057,28 @@ function EsummaryPage({ isActive, role }: Props) {
                   Submit e-Summary
                 </button>
               ) : (
-                <div style={{ background: '#fce8e6', border: '1px solid #c5221f', borderRadius: 8, padding: 14, marginTop: 16 }}>
-                  <div style={{ color: '#c5221f', fontWeight: 600, marginBottom: 10 }}>
-                    ⚠️ โปรดตรวจสอบข้อมูลให้ถูกต้อง ก่อนกด Submit e-Summary ({includedRows.length} ไฟลท์)
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={handleConfirmSubmit} disabled={submitting} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
-                      {submitting ? 'กำลังส่ง...' : 'ส่ง'}
-                    </button>
-                    <button onClick={() => setConfirming(false)} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
-                      ยกเลิก
-                    </button>
+                <div style={overlayStyle}>
+                  <div style={{ ...modalBoxStyle, textAlign: 'center' }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#000', marginBottom: 4 }}>ยืนยัน Submit e-Summary</div>
+                    <div style={{ color: '#c5221f', fontWeight: 600, margin: '10px 0', whiteSpace: 'pre-line', lineHeight: 1.6 }}>
+                      {'โปรดตรวจสอบข้อมูลให้ถูกต้องอีกครั้ง ก่อนกดยืนยัน\nเมื่อ Submit e-Summary แล้ว จะไม่สามารถแก้ไขข้อมูลได้'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                      <button onClick={handleConfirmSubmit} disabled={submitting} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
+                        {submitting ? 'กำลังส่ง...' : 'ยืนยัน'}
+                      </button>
+                      <button onClick={() => setConfirming(false)} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
+                        ยกเลิก
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
-              {submitError && <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8 }}>{submitError}</div>}
+              {submitError && (
+                <div style={{ color: '#c5221f', fontSize: 14, marginTop: 8, fontWeight: 600, whiteSpace: 'pre-line', textAlign: 'center' }}>
+                  {submitError}
+                </div>
+              )}
               {!viewingHistoryList && (
                 <div style={{ textAlign: 'center', marginTop: 16 }}>
                   <button
@@ -892,28 +1094,122 @@ function EsummaryPage({ isActive, role }: Props) {
 
           {isSubmitted && (
             <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16, maxWidth: 480, margin: '24px auto 0' }}>
-              <div style={{ color: '#137333', fontWeight: 600, marginBottom: 12, textAlign: 'center' }}>
-                ✓ e-Summary นี้ถูก Submit ไปแล้ว (แก้ไขไม่ได้ — ถ้าข้อมูลผิด ต้องลบแล้วสร้างใหม่)
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {canManage && (
-                  <button onClick={handleDeleteSummary} style={{ ...buttonStyle, background: '#c5221f', color: '#fff', flex: 1 }}>
-                    ลบ e-Summary นี้
-                  </button>
-                )}
-                <button onClick={handleCloseView} style={{ ...buttonStyle, background: '#999', color: '#fff', flex: 1 }}>
-                  ปิด
-                </button>
-              </div>
-              {!canManage && (
-                <div style={{ fontSize: 12, color: '#999', textAlign: 'center', marginTop: 8 }}>
-                  * เฉพาะ Role Apron/Supervisor เท่านั้นที่ลบ e-Summary ได้
-                </div>
-              )}
+              <button onClick={handleCloseView} style={{ ...buttonStyle, background: '#999', color: '#fff', width: '100%' }}>
+                ปิด
+              </button>
             </div>
           )}
         </div>
       )}
+
+      {editTarget && (
+        <EditCellModal
+          target={editTarget}
+          saving={savingEdit}
+          error={editError}
+          onClose={() => setEditTarget(null)}
+          onSave={handleSaveEdit}
+        />
+      )}
+    </div>
+  )
+}
+
+// =====================================================================
+// ป๊อบอัพแก้ไขข้อมูลเชคอิน (ดับเบิลคลิกจากตาราง e-Summary - Apron/Supervisor เท่านั้น)
+// =====================================================================
+function EditCellModal({
+  target,
+  saving,
+  error,
+  onClose,
+  onSave,
+}: {
+  target: EditTarget
+  saving: boolean
+  error: string
+  onClose: () => void
+  onSave: (values: Record<string, string>) => void
+}) {
+  const [flightNo, setFlightNo] = useState(target.current.flightNo || '')
+  const [time, setTime] = useState(target.current.time || '')
+  const [aircraftType, setAircraftType] = useState(target.current.aircraftType || '')
+  const [aircraftReg, setAircraftReg] = useState(target.current.aircraftReg || '')
+  const [initial, setInitial] = useState(target.current.initial || '')
+
+  function handleSave() {
+    if (target.group === 'flightNo') onSave({ flightNo: flightNo.trim().toUpperCase() })
+    else if (target.group === 'eibt' || target.group === 'eobt') onSave({ time })
+    else if (target.group === 'aircraft') onSave({ aircraftType: aircraftType.trim(), aircraftReg: aircraftReg.trim().toUpperCase() })
+    else onSave({ initial: initial.trim().toUpperCase(), time })
+  }
+
+  const isL = target.group === 'l1' || target.group === 'l2' || target.group === 'l3'
+
+  return (
+    <div style={overlayStyle}>
+      <div style={modalBoxStyle}>
+        <button onClick={onClose} style={closeBtnStyle}>
+          ✕
+        </button>
+        <h3 style={{ marginTop: 0, marginBottom: 4, color: '#000' }}>แก้ไขข้อมูล</h3>
+        <div style={{ fontSize: 13, color: '#666', marginBottom: 14 }}>
+          Flight No. {target.flightNo} — {target.title}
+        </div>
+
+        {target.group === 'flightNo' && (
+          <>
+            <label style={labelStyle}>Flight No. เดิม: {target.current.flightNo}</label>
+            <input
+              type="text"
+              value={flightNo}
+              onChange={(e) => setFlightNo(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+              style={modalInputStyle}
+            />
+          </>
+        )}
+
+        {(target.group === 'eibt' || target.group === 'eobt') && (
+          <>
+            <label style={labelStyle}>เวลาเดิม: {target.current.time || '-'}</label>
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={modalInputStyle} />
+          </>
+        )}
+
+        {target.group === 'aircraft' && (
+          <>
+            <label style={labelStyle}>A/C Type เดิม: {target.current.aircraftType || '-'}</label>
+            <input type="text" value={aircraftType} onChange={(e) => setAircraftType(e.target.value)} style={modalInputStyle} />
+            <label style={labelStyle}>A/C Reg. เดิม: {target.current.aircraftReg || '-'}</label>
+            <input
+              type="text"
+              value={aircraftReg}
+              onChange={(e) => setAircraftReg(e.target.value.toUpperCase().replace(/\s/g, ''))}
+              style={modalInputStyle}
+            />
+          </>
+        )}
+
+        {isL && (
+          <>
+            <label style={labelStyle}>Initial เดิม: {target.current.initial || '-'}</label>
+            <input
+              type="text"
+              value={initial}
+              onChange={(e) => setInitial(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+              style={modalInputStyle}
+            />
+            <label style={labelStyle}>เวลาเดิม: {target.current.time || '-'}</label>
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={modalInputStyle} />
+          </>
+        )}
+
+        {error && <div style={{ color: '#c5221f', fontSize: 14, marginBottom: 8 }}>{error}</div>}
+
+        <button onClick={handleSave} disabled={saving} style={{ ...buttonStyle, background: '#1a73e8', color: '#fff', width: '100%', marginTop: 4 }}>
+          {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -923,10 +1219,57 @@ const labelStyle = { display: 'block', fontWeight: 700, fontSize: 14, margin: '1
 const inlineFieldStyle = { padding: '4px 8px', border: '1px solid #ccc', borderRadius: 6, fontSize: 13, fontWeight: 400, color: '#000', background: '#fff' }
 const buttonStyle = { padding: 12, border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' }
 const reportTableStyle = { width: '100%', borderCollapse: 'collapse' as const, fontSize: 11, minWidth: 700 }
-const th = { padding: '6px 6px', textAlign: 'center' as const, color: '#000', border: '1px solid #ddd', background: '#f0f2f5' }
+const th = { padding: '6px 6px', textAlign: 'center' as const, color: '#000', border: '1px solid #ddd', background: '#f0f2f5', wordBreak: 'break-word' as const }
 const td = { padding: '6px 6px', textAlign: 'center' as const, color: '#000', border: '1px solid #eee' }
+// หัวตารางคอลัมน์ข้อมูล (ไม่รวม No./Choose Flt.) ให้ความกว้างเท่าๆ กันทุกช่อง
+const dataTh = { ...th, width: 92 }
 const smallNote = { fontSize: '0.85em', color: '#666' }
 const stickyCol = { position: 'sticky' as const, left: 0, zIndex: 2, background: '#f0f2f5' }
 const stickyRow = { position: 'sticky' as const, top: 0, zIndex: 1 }
+// ไฮไลท์ช่องที่ "ข้อมูลไม่ครบ" ตอนพยายาม Submit (สีแดงอ่อน เฉพาะช่อง ไม่ใช่ทั้งแถว)
+const incompleteCellStyle = { background: '#fde0e0' }
+// ช่องที่ Role Apron/Supervisor ดับเบิลคลิกเพื่อแก้ไขข้อมูลได้
+const editableCellStyle = { cursor: 'pointer' as const }
+const overlayStyle = {
+  position: 'fixed' as const,
+  inset: 0,
+  background: 'rgba(0,0,0,0.5)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 16,
+  zIndex: 200,
+}
+const modalBoxStyle = {
+  background: '#fff',
+  borderRadius: 12,
+  padding: 20,
+  maxWidth: 420,
+  width: '100%',
+  maxHeight: '85vh',
+  overflowY: 'auto' as const,
+  position: 'relative' as const,
+}
+const modalInputStyle = {
+  width: '100%',
+  padding: 10,
+  border: '1px solid #ccc',
+  borderRadius: 8,
+  fontSize: 15,
+  boxSizing: 'border-box' as const,
+  background: '#fff',
+  color: '#000',
+  marginBottom: 10,
+}
+const closeBtnStyle = {
+  position: 'absolute' as const,
+  top: 14,
+  right: 16,
+  background: 'none',
+  border: 'none',
+  fontSize: 20,
+  cursor: 'pointer',
+  color: '#666',
+}
 
 export default EsummaryPage
